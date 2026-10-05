@@ -95,7 +95,7 @@
     "release:legacy:major": "bumpp major --commit --push --tag"
   },
   "dependencies": {
-    "chalk": "^6.0.0",
+    "chalk": "^6.0.1",
     "chokidar": "^5.0.0"
   },
   "devDependencies": {
