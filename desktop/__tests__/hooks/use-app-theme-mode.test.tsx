@@ -40,11 +40,11 @@ describe('useAppThemeMode', () => {
   it('shares a single document observer across every consumer', () => {
     // Arrange
     const observe = vi.fn();
-    const MutationObserverStub = vi.fn(() => ({
+    const MutationObserverStub = vi.fn(function () { return ({
       disconnect: vi.fn(),
       observe,
       takeRecords: vi.fn(),
-    }));
+    }); });
     vi.stubGlobal('MutationObserver', MutationObserverStub);
 
     // Act

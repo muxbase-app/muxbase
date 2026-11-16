@@ -32,47 +32,80 @@ function applySettingsToUiStore(settings: ElectronSettings): void {
   ui.setSidebarWidth(settings.sidebarWidth);
 }
 
-export const useElectronSettingsStore = create<ElectronSettingsState & ElectronSettingsActions>((set) => ({
-  settings: null,
-  isLoading: false,
-  loadError: null,
+export const useElectronSettingsStore = create<ElectronSettingsState & ElectronSettingsActions>((set, get) => {
+  let loadPromise: Promise<void> | null = null;
+  let queue = Promise.resolve();
+  let confirmed: ElectronSettings | null = null;
+  const pending = new Map<keyof ElectronSettings, { id: symbol; value: ElectronSettings[keyof ElectronSettings] }>();
 
-  load: async () => {
-    set({ isLoading: true, loadError: null });
-    try {
-      const settings = await electronSettingsApi.getElectronSettings();
-      set({ settings });
-    } catch (error) {
-      set({ loadError: error instanceof Error ? error.message : String(error) });
-    } finally {
-      set({ isLoading: false });
-    }
-  },
+  function displaySettings(settings: ElectronSettings): ElectronSettings {
+    const result = { ...settings };
+    for (const [key, edit] of pending) Object.assign(result, { [key]: edit.value });
+    return result;
+  }
 
-  update: async (key, value) => {
-    const previous = useElectronSettingsStore.getState().settings;
-    set((state) => ({
-      settings: state.settings ? { ...state.settings, [key]: value } : null,
-    }));
-    try {
-      const updated = await electronSettingsApi.updateElectronSetting({ key, value });
-      set({ settings: updated });
-    } catch (error) {
-      set({ settings: previous });
-      toastError('Could not save setting', error);
-    }
-  },
+  function enqueue(work: () => Promise<void>): Promise<void> {
+    const next = queue.then(work);
+    queue = next.catch(() => {});
+    return next;
+  }
 
-  reset: async () => {
-    set({ isLoading: true });
-    try {
-      const defaults = await electronSettingsApi.resetElectronSettings();
-      set({ settings: defaults });
-      applySettingsToUiStore(defaults);
-    } catch (error) {
-      toastError('Could not reset settings', error);
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-}));
+  return {
+    settings: null,
+    isLoading: false,
+    loadError: null,
+
+    load: () => {
+      if (get().settings) return Promise.resolve();
+      if (loadPromise) return loadPromise;
+      set({ isLoading: true, loadError: null });
+      loadPromise = electronSettingsApi.getElectronSettings().then((settings) => {
+        confirmed = settings;
+        set({ settings: displaySettings(settings) });
+      }).catch((error: unknown) => {
+        set({ loadError: error instanceof Error ? error.message : String(error) });
+      }).finally(() => {
+        loadPromise = null;
+        set({ isLoading: false });
+      });
+      return loadPromise;
+    },
+
+    update: async (key, value) => {
+      const id = Symbol(key);
+      const editValue = structuredClone(value);
+      if (pending.size === 0) confirmed = get().settings;
+      pending.set(key, { id, value: editValue });
+      set((state) => ({
+        settings: state.settings ? { ...state.settings, [key]: editValue } : null,
+      }));
+      await enqueue(async () => {
+        try {
+          confirmed = await electronSettingsApi.updateElectronSetting({ key, value: editValue });
+        } catch (error) {
+          toastError('Could not save setting', error);
+        } finally {
+          if (pending.get(key)?.id === id) pending.delete(key);
+          if (confirmed) set({ settings: displaySettings(confirmed) });
+        }
+      });
+    },
+
+    reset: async () => {
+      set({ isLoading: true });
+      await enqueue(async () => {
+        try {
+          const defaults = await electronSettingsApi.resetElectronSettings();
+          confirmed = defaults;
+          const settings = displaySettings(defaults);
+          set({ settings });
+          applySettingsToUiStore(settings);
+        } catch (error) {
+          toastError('Could not reset settings', error);
+        } finally {
+          set({ isLoading: false });
+        }
+      });
+    },
+  };
+});

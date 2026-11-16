@@ -13,9 +13,18 @@ import {
   sanitizePaneTopicsList,
   sanitizePaneTopicsUpdatedEvent,
   sanitizeProjectTextSearchResults,
+  sanitizeToastEvent,
 } from '../src/renderer/lib/runtimeValidation';
 
 describe('runtimeValidation', () => {
+  it('rejects malformed Team ready notification identities while keeping legacy toasts', () => {
+    const legacy = { message: 'Ready', severity: 'info' };
+    expect(sanitizeToastEvent(legacy)).toEqual(legacy);
+    expect(sanitizeToastEvent({ ...legacy, teamReady: { projectRoot: '/project', runId: 'run-a' } })).not.toBeNull();
+    expect(sanitizeToastEvent({ ...legacy, teamReady: { projectRoot: 42, runId: 'run-a' } })).toBeNull();
+    expect(sanitizeToastEvent({ ...legacy, teamReady: { projectRoot: '/project', runId: '' } })).toBeNull();
+  });
+
   const activity = {
     activityRevision: 3,
     adapterCapabilities: ['turnIds', 'backgroundEntities'],

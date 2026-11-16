@@ -14,6 +14,22 @@ vi.mock('muxbase/core', async () => {
 });
 
 import { DuelWorkflow } from '../../src/main/services/bridge/DuelWorkflow';
+import type { TeamDuelLaunchOptions } from '../../src/main/services/team/teamWorkflowTypes.js';
+
+function teamOptions(role: 'a' | 'b'): TeamDuelLaunchOptions {
+  return {
+    agentPrompt: 'Read .muxbase/team/round-build.md',
+    duel: { groupId: 'team-run', prompt: 'Build independently', role },
+    paneTitle: `Candidate ${role}`,
+    projectRoot: '/project',
+    readOnly: false,
+    slugBase: `team-${role}`,
+    teamRunId: 'team-run',
+    useWorktree: true,
+    worktreeSeedFile: { content: 'Build round', relativePath: '.muxbase/team/round-build.md' },
+    worktreeStartPoint: 'a'.repeat(40),
+  };
+}
 
 function pane(id: string, overrides: Partial<MuxBasePane> = {}): MuxBasePane {
   return {
@@ -137,5 +153,57 @@ describe('DuelWorkflow', () => {
     await expect(harness.workflow.resolve('winner')).resolves.toEqual({ success: false, error: 'cannot close' });
     expect(harness.getPanes()).toHaveLength(2);
     expect(harness.getPanes()[0]?.duel).toBeDefined();
+  });
+
+  it('forwards durable Team ownership, the captured base, and the round seed before native launch', async () => {
+    const harness = makeHarness();
+    const options = teamOptions('a');
+
+    await harness.workflow.createTeamCandidate('Candidate A', { agent: 'codex', effort: 'high', model: 'writer-model' }, options);
+
+    expect(harness.dependencies.createPane).toHaveBeenCalledWith('Candidate A', 'codex', {
+      ...options, effort: 'high', model: 'writer-model', slugSuffix: 'a',
+    });
+  });
+
+  it('does not replace an interrupted owned candidate whose Team journal has not registered it yet', async () => {
+    const harness = makeHarness();
+    const survivor = pane('survivor', { duel: teamOptions('b').duel, teamRunId: 'team-run' });
+    harness.setPanes([survivor]);
+
+    const result = await harness.workflow.createTeamCandidate('Candidate B', { agent: 'claude' }, teamOptions('b'));
+
+    expect(result).toMatchObject({ pane: survivor, recovered: true, success: true });
+    expect(harness.dependencies.createPane).not.toHaveBeenCalled();
+    expect(harness.getPanes()).toEqual([survivor]);
+  });
+
+  it('retains an owned pane when native creation throws after launching its CLI', async () => {
+    const harness = makeHarness();
+    const survivor = pane('survivor', { duel: teamOptions('a').duel, teamRunId: 'team-run' });
+    harness.dependencies.createPane.mockImplementationOnce(async () => {
+      harness.setPanes([survivor]);
+      throw new Error('Creation interrupted after native launch');
+    });
+
+    const result = await harness.workflow.createTeamCandidate('Candidate A', { agent: 'codex' }, teamOptions('a'));
+
+    expect(result).toMatchObject({ pane: survivor, success: false });
+    expect(harness.getPanes()[0].duel).toEqual(teamOptions('a').duel);
+  });
+
+  it('blocks ordinary Duel resolution and metadata clearing for Team candidates', async () => {
+    const harness = makeHarness();
+    harness.setPanes([
+      pane('a', { duel: teamOptions('a').duel, teamRunId: 'team-run' }),
+      pane('b', { duel: teamOptions('b').duel, teamRunId: 'team-run' }),
+    ]);
+
+    expect(await harness.workflow.resolve('b')).toMatchObject({ success: false });
+    harness.workflow.clearMetadata(['a', 'b']);
+
+    expect(harness.getPanes()).toHaveLength(2);
+    expect(harness.getPanes().every((candidate) => candidate.duel?.groupId === 'team-run')).toBe(true);
+    expect(harness.dependencies.closePane).not.toHaveBeenCalled();
   });
 });

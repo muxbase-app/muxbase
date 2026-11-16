@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const FAKE_AGENTS = ['claude', 'codex', 'opencode', 'pi'];
 const FAKE_AGENT_SCRIPT = [
@@ -14,6 +15,9 @@ const FAKE_AGENT_SCRIPT = [
   'if [ "${1:-}" = "--version" ]; then',
   '  printf "%s\\n" "$name 2.2.0-muxbase-e2e"',
   '  exit 0',
+  'fi',
+  'if [ "${MUXBASE_E2E_TEAM_FAKE:-}" = "1" ]; then',
+  '  exec "$MUXBASE_E2E_MANAGED_NODE" "$MUXBASE_E2E_TEAM_AGENT" "$name" "$@"',
   'fi',
   'printf "MUXBASE_FAKE_AGENT_READY %s\\n" "$name"',
   'while IFS= read -r line; do printf "MUXBASE_FAKE_AGENT_INPUT %s %s\\n" "$name" "$line"; done',
@@ -59,6 +63,10 @@ function configureFakeAgents(childEnv) {
   childEnv.HOME = isolatedHome;
   childEnv.PATH = `${fakeBin}:${childEnv.PATH ?? ''}`;
   childEnv.SHELL = '/bin/sh';
+  childEnv.MUXBASE_E2E_MANAGED_NODE = process.execPath;
+  childEnv.MUXBASE_E2E_TEAM_AGENT = fileURLToPath(
+    new URL('../desktop/__tests__/e2e/support/team-fake-agent.ts', import.meta.url),
+  );
   return isolatedHome;
 }
 

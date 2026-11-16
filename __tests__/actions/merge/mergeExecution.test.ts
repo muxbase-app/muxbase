@@ -5,8 +5,16 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeMerge } from '../../../src/actions/merge/mergeExecution.js';
+import { mergeMainIntoWorktree, mergeWorktreeIntoMain } from '../../../src/utils/gitMergeOps.js';
 import type { MuxBasePane } from '../../../src/types.js';
 import type { ActionContext } from '../../../src/actions/types.js';
+import { closePane } from '../../../src/actions/implementations/closeAction.js';
+import { execFileAsync } from '../../../src/utils/execAsync.js';
+import { triggerHookWithResult } from '../../../src/utils/hooks.js';
+
+vi.mock('../../../src/utils/execAsync.js', () => ({
+  execFileAsync: vi.fn(async () => 'a'.repeat(40)),
+}));
 
 // Mock child_process to prevent actual tmux commands
 vi.mock('child_process', () => ({
@@ -24,6 +32,7 @@ vi.mock('../../../src/utils/gitMergeOps.ts', () => ({
 
 vi.mock('../../../src/utils/hooks.js', () => ({
   triggerHook: vi.fn(() => Promise.resolve()),
+  triggerHookWithResult: vi.fn(async () => ({ success: true })),
 }));
 
 // Create a mock StateManager that can be configured per test
@@ -96,6 +105,135 @@ describe('Merge Execution - Bug Fixes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(execFileAsync).mockResolvedValue('a'.repeat(40));
+    vi.mocked(triggerHookWithResult).mockResolvedValue({ success: true });
+  });
+
+  it('does not update the target when certification fails after integrating main', async () => {
+    vi.mocked(mergeMainIntoWorktree).mockResolvedValue({ success: true });
+    vi.mocked(mergeWorktreeIntoMain).mockResolvedValue({ success: true });
+    const validateMerge = vi.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('Integrated code needs another review');
+
+    const result = await executeMerge(
+      mockPane,
+      { ...mockContext, validateMerge },
+      'main',
+      '/test/main',
+    );
+
+    expect(result).toMatchObject({ type: 'error', message: 'Integrated code needs another review' });
+    expect(mergeWorktreeIntoMain).not.toHaveBeenCalled();
+  });
+
+  it('rejects uncertified source code before integrating main', async () => {
+    const result = await executeMerge(
+      mockPane,
+      { ...mockContext, validateMerge: async () => 'Approval is missing' },
+      'main',
+      '/test/main',
+    );
+
+    expect(result).toMatchObject({ type: 'error', message: 'Approval is missing' });
+    expect(mergeMainIntoWorktree).not.toHaveBeenCalled();
+    expect(mergeWorktreeIntoMain).not.toHaveBeenCalled();
+  });
+
+  it('merges the certified immutable revision and retains the Team writer for finalization', async () => {
+    vi.mocked(mergeMainIntoWorktree).mockResolvedValue({ success: true });
+    vi.mocked(mergeWorktreeIntoMain).mockResolvedValue({ success: true });
+    const pane = { ...mockPane, teamRunId: 'team-run' };
+    const validateMerge = vi.fn(async () => null);
+
+    const publication = { operationId: 'merge-test', targetRef: 'refs/heads/main', targetSha: 'b'.repeat(40) };
+    const result = await executeMerge(pane, {
+      ...mockContext, validateMerge,
+      prepareTeamMerge: async () => publication,
+      onTeamMergeSuccess: async () => null,
+      onTeamMergeHookStart: () => publication.operationId,
+      onTeamMergeHookComplete: () => {},
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'success' });
+    expect(mergeWorktreeIntoMain).toHaveBeenCalledWith('/test/main', 'a'.repeat(40), expect.any(Function), publication);
+    expect(validateMerge).toHaveBeenLastCalledWith(pane, pane.worktreePath, 'a'.repeat(40));
+    expect(closePane).not.toHaveBeenCalled();
+  });
+
+  it('retains an authoritatively owned Team writer even if its tag was lost', async () => {
+    vi.mocked(mergeMainIntoWorktree).mockResolvedValue({ success: true });
+    vi.mocked(mergeWorktreeIntoMain).mockResolvedValue({ success: true });
+
+    const result = await executeMerge(mockPane, {
+      ...mockContext, isTeamOwnedWriter: () => true, validateMerge: async () => null,
+      prepareTeamMerge: async () => ({ operationId: 'merge-test', targetRef: 'refs/heads/main', targetSha: 'b'.repeat(40) }),
+      onTeamMergeSuccess: async () => null,
+      onTeamMergeHookStart: () => 'merge-test',
+      onTeamMergeHookComplete: () => {},
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'success' });
+    expect(closePane).not.toHaveBeenCalled();
+  });
+
+  it('records Team publication before the hook and reports hook failure without inviting another merge', async () => {
+    const finalized = vi.fn(async () => null);
+    const claimed = vi.fn(() => 'merge-test');
+    const report = vi.fn();
+    vi.mocked(triggerHookWithResult).mockResolvedValue({ success: false, error: 'exit 7' });
+
+    const result = await executeMerge({ ...mockPane, teamRunId: 'team-run' }, {
+      ...mockContext,
+      validateMerge: async () => null,
+      prepareTeamMerge: async () => ({ operationId: 'merge-test', targetRef: 'refs/heads/main', targetSha: 'b'.repeat(40) }),
+      onTeamMergeSuccess: finalized,
+      onTeamMergeHookStart: claimed,
+      onTeamMergeHookComplete: report,
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'error', title: 'Merged — post-merge hook failed' });
+    expect(finalized.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(triggerHookWithResult).mock.invocationCallOrder[0]);
+    expect(claimed.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(triggerHookWithResult).mock.invocationCallOrder[0]);
+    expect(triggerHookWithResult).toHaveBeenCalledWith('post_merge', '/test/main', expect.anything(),
+      expect.objectContaining({ MUXBASE_TEAM_MERGE_ID: 'merge-test' }));
+    expect(report).toHaveBeenCalledWith(expect.anything(), expect.stringContaining('exit 7'));
+    expect(closePane).not.toHaveBeenCalled();
+  });
+
+  it('does not launch external Team hook effects without durable ownership callbacks', async () => {
+    const result = await executeMerge({ ...mockPane, teamRunId: 'team-run' }, {
+      ...mockContext,
+      validateMerge: async () => null,
+      prepareTeamMerge: async () => ({ operationId: 'merge-test', targetRef: 'refs/heads/main', targetSha: 'b'.repeat(40) }),
+      onTeamMergeSuccess: async () => null,
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'error', message: expect.stringContaining('durable hook callbacks are missing') });
+    expect(triggerHookWithResult).not.toHaveBeenCalled();
+  });
+
+  it('does not update the target when the pinned revision fails certification', async () => {
+    vi.mocked(mergeMainIntoWorktree).mockResolvedValue({ success: true });
+    const result = await executeMerge({ ...mockPane, teamRunId: 'team-run' }, {
+      ...mockContext,
+      validateMerge: async (_pane, _path, revision) => revision ? 'Source ref is not reviewed' : null,
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'error', message: 'Source ref is not reviewed' });
+    expect(mergeWorktreeIntoMain).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a missing Team source ref without updating the target', async () => {
+    vi.mocked(mergeMainIntoWorktree).mockResolvedValue({ success: true });
+    vi.mocked(execFileAsync).mockRejectedValue(new Error('Source branch is missing'));
+
+    const result = await executeMerge({ ...mockPane, teamRunId: 'team-run' }, {
+      ...mockContext, validateMerge: async () => null,
+    }, 'main', '/test/main');
+
+    expect(result).toMatchObject({ type: 'error', message: expect.stringContaining('Source branch is missing') });
+    expect(mergeWorktreeIntoMain).not.toHaveBeenCalled();
   });
 
   describe('BUG #1: 2-Phase Merge Missing', () => {
@@ -110,7 +248,7 @@ describe('Merge Execution - Bug Fixes', () => {
       expect(mergeMainIntoWorktree).toHaveBeenCalledWith('/test/main/.muxbase/worktrees/test-branch', 'main');
 
       // THEN call mergeWorktreeIntoMain
-      expect(mergeWorktreeIntoMain).toHaveBeenCalledWith('/test/main', 'test-branch');
+      expect(mergeWorktreeIntoMain).toHaveBeenCalledWith('/test/main', 'test-branch', expect.any(Function));
 
       // Verify order: mergeMainIntoWorktree must be called BEFORE mergeWorktreeIntoMain
       const mainIntoWorktreeCall = vi.mocked(mergeMainIntoWorktree).mock.invocationCallOrder[0];

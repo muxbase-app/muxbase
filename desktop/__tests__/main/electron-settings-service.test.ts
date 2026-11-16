@@ -64,8 +64,38 @@ describe('ElectronSettingsService', () => {
     expect(defaults.terminalTransport).toBe('pty');
   });
 
-  it('keeps lifecycle adapter installation disabled until the user explicitly opts in', () => {
-    expect(ElectronSettingsService.getDefaults().enableAgentLifecycleAdapters).toBe(false);
+  it('enables lifecycle adapters by default so Team Room works on first launch', () => {
+    expect(ElectronSettingsService.getDefaults().enableAgentLifecycleAdapters).toBe(true);
+  });
+
+  it('persists team preferences and resets them to Pair without sharing role arrays', () => {
+    const service = ElectronSettingsService.getInstance();
+    const roles = ['domain'] satisfies ElectronSettings['teamCouncilRoles'];
+    service.update('teamDefaultMode', 'council');
+    service.update('teamCouncilRoles', roles);
+    roles.push('tester');
+    expect(service.getAll().teamCouncilRoles).toEqual(['domain']);
+    resetService();
+    expect(ElectronSettingsService.getInstance().getAll().teamDefaultMode).toBe('council');
+    const defaults = ElectronSettingsService.getDefaults();
+    defaults.teamCouncilRoles.push('domain');
+    expect(ElectronSettingsService.getDefaults().teamCouncilRoles).toEqual(['architect', 'tester']);
+    const reset = ElectronSettingsService.getInstance().reset();
+    expect(reset.teamDefaultMode).toBe('pair');
+    expect(reset.teamCouncilRoles).toEqual(['architect', 'tester']);
+  });
+
+  it('rejects invalid team updates before touching persisted preferences', () => {
+    const service = ElectronSettingsService.getInstance();
+    expect(() => service.update('teamMaxFixRounds', 0)).toThrow();
+    expect(service.getAll().teamMaxFixRounds).toBe(2);
+    expect(() => service.update('teamCouncilRoles', ['tester', 'tester'])).toThrow();
+    expect(service.getAll().teamCouncilRoles).toEqual(['architect', 'tester']);
+  });
+
+  it('validates persisted team settings instead of launching with corrupt limits', () => {
+    storeData.current.teamTokenBudget = -1;
+    expect(() => ElectronSettingsService.getInstance().getAll()).toThrow();
   });
 
   it('starts without a persisted preferred terminal launch geometry', () => {

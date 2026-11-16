@@ -1,4 +1,5 @@
 import type { MuxBasePane, ProjectSettings } from '../types.js';
+import type { CertifiedMergePublication } from '../utils/gitMergeOps.js';
 
 export type ActionResultType =
   | 'success'
@@ -58,6 +59,12 @@ export interface ActionContext {
   onPaneRemove?: (paneId: string) => void;
   onActionResult?: (result: ActionResult) => Promise<void>;
   skipLastPaneWelcome?: boolean;
+  isTeamOwnedWriter?: (pane: MuxBasePane) => boolean;
+  onTeamMergeSuccess?: (pane: MuxBasePane) => Promise<string | null>;
+  onTeamMergeHookStart?: (pane: MuxBasePane) => string;
+  onTeamMergeHookComplete?: (pane: MuxBasePane, error?: string) => void;
+  prepareTeamMerge?: (pane: MuxBasePane, targetPath: string, sourceRevision: string) => Promise<CertifiedMergePublication>;
+  validateMerge?: (pane: MuxBasePane, worktreePath?: string, sourceRevision?: string) => Promise<string | null>;
 }
 
 export type ActionFunction<TParams = unknown> = (

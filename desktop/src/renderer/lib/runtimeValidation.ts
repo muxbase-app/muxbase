@@ -300,7 +300,12 @@ function isToastEvent(value: unknown): value is ToastEvent {
 
   return isString(value.message)
     && isString(value.severity)
-    && TOAST_SEVERITIES.has(value.severity);
+    && TOAST_SEVERITIES.has(value.severity)
+    && (value.teamReady === undefined || (
+      isRecord(value.teamReady)
+      && isString(value.teamReady.projectRoot) && value.teamReady.projectRoot.length > 0
+      && isString(value.teamReady.runId) && value.teamReady.runId.length > 0
+    ));
 }
 
 function isProgressEvent(value: unknown): value is ProgressEvent {

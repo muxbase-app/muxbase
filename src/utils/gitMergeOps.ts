@@ -4,14 +4,20 @@
  * Handles the actual merge operations with proper error handling
  */
 
+import { realpathSync } from 'node:fs';
+import { publishCertifiedMerge } from './certifiedPublication.js';
 import { execFileAsync } from './execAsync.js';
 import {
   findConflictMergeTransactionForMerge,
   inspectConflictMergeState,
 } from './conflictMergeTransaction.js';
 import { cleanupPromptFilesForSlug } from './promptStore.js';
+import type { CertifiedMergePublication } from './teamPublicationJournal.js';
+
+export type { CertifiedMergePublication } from './teamPublicationJournal.js';
 
 const GIT_WRITE_TIMEOUT_MS = 5 * 60 * 1000;
+const targetMergeLocks = new Map<string, Promise<void>>();
 
 export interface MergeResult {
   success: boolean;
@@ -19,6 +25,8 @@ export interface MergeResult {
   conflictFiles?: string[];
   needsManualResolution?: boolean;
   status?: 'clean' | 'conflicted' | 'failed';
+  teamMerge?: boolean;
+  published?: boolean;
 }
 
 /**
@@ -77,7 +85,35 @@ export async function mergeMainIntoWorktree(
  */
 export async function mergeWorktreeIntoMain(
   mainRepoPath: string,
-  worktreeBranch: string
+  worktreeBranch: string,
+  validateBeforeMerge?: () => Promise<string | null>,
+  publication?: CertifiedMergePublication,
+): Promise<MergeResult> {
+  let key: string;
+  try {
+    key = realpathSync(mainRepoPath);
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  const previous = targetMergeLocks.get(key);
+  let release!: () => void;
+  const acquired = new Promise<void>((resolve) => { release = resolve; });
+  targetMergeLocks.set(key, acquired);
+  await previous;
+  try {
+    const error = await validateBeforeMerge?.();
+    if (error) return { success: false, status: 'failed', error };
+    return await executeTargetMerge(mainRepoPath, worktreeBranch, publication);
+  } finally {
+    release();
+    if (targetMergeLocks.get(key) === acquired) targetMergeLocks.delete(key);
+  }
+}
+
+async function executeTargetMerge(
+  mainRepoPath: string,
+  worktreeBranch: string,
+  publication?: CertifiedMergePublication,
 ): Promise<MergeResult> {
   const activeTransaction = findConflictMergeTransactionForMerge(mainRepoPath, worktreeBranch);
   if (activeTransaction && activeTransaction.state !== 'resolved') {
@@ -89,6 +125,10 @@ export async function mergeWorktreeIntoMain(
   }
 
   try {
+    if (publication) {
+      await publishCertifiedMerge(mainRepoPath, worktreeBranch, publication);
+      return { success: true };
+    }
     await execFileAsync('git', ['merge', worktreeBranch, '--no-edit'], {
       cwd: mainRepoPath,
       timeout: GIT_WRITE_TIMEOUT_MS,
@@ -97,6 +137,8 @@ export async function mergeWorktreeIntoMain(
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (publication) return { success: false, status: 'failed', error: errorMessage };
 
     // This shouldn't have conflicts if we properly merged main into worktree first
     const state = await inspectConflictMergeState(mainRepoPath);

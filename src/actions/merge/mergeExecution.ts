@@ -7,13 +7,11 @@
 
 import type { ActionResult, ActionContext } from "../types.js"
 import type { MuxBasePane } from "../../types.js"
-import { triggerHook } from "../../utils/hooks.js"
 import { getPaneBranchName } from "../../utils/git.js"
 import { LogService } from "../../services/LogService.js"
 import {
   abortMerge,
   mergeMainIntoWorktree,
-  mergeWorktreeIntoMain,
 } from "../../utils/gitMergeOps.js"
 import { createConflictResolutionPaneForMerge } from "./conflictResolution.js"
 import { closePane } from "../implementations/closeAction.js"
@@ -31,6 +29,8 @@ import {
   verifyResolvedConflictMerge,
   inspectConflictMergeState,
 } from "../../utils/conflictMergeTransaction.js"
+
+import { getMergeSafetyError, getValidatedMergeSource, mergeCertifiedTarget, runMergeHook } from './mergeSafety.js'
 
 async function rollbackPreparedManualMerge(
   repoPath: string,
@@ -124,6 +124,9 @@ export async function executeMergeWithConflictHandling(
   mainRepoPath: string,
   strategy: "manual" | "ai"
 ): Promise<ActionResult> {
+  const safetyError = await getMergeSafetyError(pane, context)
+  if (safetyError) return { type: 'error', message: safetyError, dismissable: true }
+
   const result = await mergeMainIntoWorktree(pane.worktreePath!, mainBranch)
 
   if (!result.success && result.needsManualResolution) {
@@ -161,6 +164,9 @@ export async function executeMerge(
   mainRepoPath: string,
   skipWorktreeMerge: boolean = false
 ): Promise<ActionResult> {
+  const initialSafetyError = await getMergeSafetyError(pane, context)
+  if (initialSafetyError) return { type: 'error', message: initialSafetyError, dismissable: true }
+
   const log = LogService.getInstance()
   const transaction = pane.worktreePath ? getConflictMergeTransaction(pane.worktreePath) : undefined
 
@@ -270,13 +276,16 @@ export async function executeMerge(
     }
   }
 
-  const step2 = await mergeWorktreeIntoMain(mainRepoPath, getPaneBranchName(pane))
+  const source = await getValidatedMergeSource(pane, context, pane.worktreePath!, getPaneBranchName(pane))
+  if (!source.success) return { type: 'error', message: source.error, dismissable: true }
+
+  const step2 = await mergeCertifiedTarget(pane, context, mainRepoPath, pane.worktreePath!, source.revision)
 
   if (!step2.success) {
     return {
       type: "error",
-      title: "Merge Failed",
-      message: `Failed to merge into ${mainBranch}: ${step2.error}`,
+      title: step2.published ? 'Merged — finalization needs attention' : "Merge Failed",
+      message: step2.published ? `Git published the reviewed source. ${step2.error}` : `Failed to merge into ${mainBranch}: ${step2.error}`,
       dismissable: true,
     }
   }
@@ -285,10 +294,16 @@ export async function executeMerge(
 
   // Trigger post_merge hook after successful merge
   log.debug(`[mergeExecution] About to trigger post_merge hook for ${pane.slug}`, "mergeExecution")
-  await triggerHook("post_merge", mainRepoPath, pane, {
+  const hookError = await runMergeHook(pane, context, mainRepoPath, Boolean(step2.teamMerge), {
     MUXBASE_TARGET_BRANCH: mainBranch,
   })
   log.debug(`[mergeExecution] post_merge hook completed for ${pane.slug}`, "mergeExecution")
+
+  if (step2.teamMerge) {
+    return hookError
+      ? { type: 'error', title: 'Merged — post-merge hook failed', message: hookError, dismissable: true }
+      : { type: 'success', message: 'Reviewed Team source merged. Writer worktree preserved.', dismissable: true }
+  }
 
   // Merge successful! Show cleanup options using the existing closePane dialog
   // This reuses the CLOSE action which handles everything properly:

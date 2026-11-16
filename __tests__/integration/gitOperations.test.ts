@@ -7,6 +7,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockGitRepo, addWorktree, type MockGitRepo } from '../fixtures/integration/gitRepo.js';
 
+vi.mock('node:fs', async (importOriginal) => ({
+  ...await importOriginal<typeof import('node:fs')>(),
+  realpathSync: (path: string) => path,
+}));
+
 // Mock child_process
 const mockExecSync = vi.fn();
 const mockExecFileSync = vi.fn();

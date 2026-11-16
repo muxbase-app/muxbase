@@ -16,11 +16,12 @@ import { handleCommitWithOptions } from './commitMessageHandler.js';
 import { getAvailableAgents } from '../../utils/agentDetection.js';
 import { TmuxService } from '../../services/TmuxService.js';
 import { StateManager } from '../../shared/StateManager.js';
-import { abortMerge, mergeMainIntoWorktree, mergeWorktreeIntoMain } from '../../utils/gitMergeOps.js';
+import { abortMerge, mergeMainIntoWorktree } from '../../utils/gitMergeOps.js';
 import { clearConflictMergeTransaction } from '../../utils/conflictMergeTransaction.js';
 import { triggerHook } from '../../utils/hooks.js';
 import { closePane } from '../implementations/closeAction.js';
 import { launchManagedConflictResolutionPane } from './conflictPaneLifecycle.js';
+import { getMergeSafetyError, getValidatedMergeSource, isTeamOwnedWriter, mergeCertifiedTarget, runMergeHook } from './mergeSafety.js';
 
 const log = LogService.getInstance();
 
@@ -132,6 +133,7 @@ async function processNextInQueue(
   currentIndex: number,
   result: MultiMergeResult
 ): Promise<ActionResult> {
+  if (isTeamOwnedWriter(pane, context)) result.teamMerge = true;
   // Check if we're done
   if (currentIndex >= queue.length) {
     return showMultiMergeSummary(pane, context, result);
@@ -200,6 +202,9 @@ async function executeSingleWorktreeMerge(
   onComplete: (success: boolean, error?: string) => Promise<ActionResult>
 ): Promise<ActionResult> {
   const { validation, worktree } = item;
+  const safetyError = await getMergeSafetyError(pane, context, worktree.worktreePath);
+  if (safetyError) return { type: 'error', message: safetyError, dismissable: true };
+
   const worktreeLabel = getWorktreeDisplayLabel(worktree);
   const progressPrefix = `[${currentIndex + 1}/${queue.length}] ${worktreeLabel}`;
 
@@ -656,6 +661,12 @@ async function createAndMonitorConflictPane(
       onResolved: async (resolvedConflictPane) => {
         if (!claimCallback()) return;
         try {
+          const source = await getValidatedMergeSource(pane, context, worktree.worktreePath, worktree.branch);
+          if (!source.success) {
+            await continueQueue(false, source.error);
+            return;
+          }
+
           log.info(`[multiMerge] Conflicts resolved for ${worktree.repoName}, cleaning up conflict pane`, 'multiMerge');
           const tmuxService = TmuxService.getInstance();
 
@@ -667,7 +678,7 @@ async function createAndMonitorConflictPane(
           const panesWithoutConflictPane = currentPanes.filter((p: MuxBasePane) => p.id !== resolvedConflictPane.id);
           await context.savePanes(panesWithoutConflictPane);
 
-          const mergeResult = await mergeWorktreeIntoMain(worktree.parentRepoPath, worktree.branch);
+          const mergeResult = await mergeCertifiedTarget(pane, context, worktree.parentRepoPath, worktree.worktreePath, source.revision);
 
           if (!mergeResult.success) {
             log.error(
@@ -679,11 +690,15 @@ async function createAndMonitorConflictPane(
           } else {
             clearConflictMergeTransaction(worktree.worktreePath);
             // Trigger post_merge hook
-            await triggerHook('post_merge', worktree.parentRepoPath, pane, {
+            const hookError = await runMergeHook(pane, context, worktree.parentRepoPath, Boolean(mergeResult.teamMerge), {
               MUXBASE_TARGET_BRANCH: mainBranch,
               MUXBASE_WORKTREE_PATH: worktree.worktreePath,
               MUXBASE_REPO_NAME: worktree.repoName,
             });
+            if (hookError) {
+              await continueQueue(false, hookError);
+              return;
+            }
           }
           await continueQueue(true);
         } catch (error) {
@@ -735,6 +750,9 @@ async function performWorktreeMerge(
     MUXBASE_WORKTREE_PATH: worktree.worktreePath,
     MUXBASE_REPO_NAME: worktree.repoName,
   });
+
+  const initialSafetyError = await getMergeSafetyError(pane, context, worktree.worktreePath);
+  if (initialSafetyError) return { type: 'error', message: initialSafetyError, dismissable: true };
 
   const step1 = await mergeMainIntoWorktree(worktree.worktreePath, mainBranch);
 
@@ -804,18 +822,22 @@ async function performWorktreeMerge(
     return onComplete(false, `Merge failed: ${step1.error}`);
   }
 
-  const step2 = await mergeWorktreeIntoMain(worktree.parentRepoPath, worktree.branch);
+  const source = await getValidatedMergeSource(pane, context, worktree.worktreePath, worktree.branch);
+  if (!source.success) return { type: 'error', message: source.error, dismissable: true };
+
+  const step2 = await mergeCertifiedTarget(pane, context, worktree.parentRepoPath, worktree.worktreePath, source.revision);
 
   if (!step2.success) {
     return onComplete(false, `Failed to merge into ${mainBranch}: ${step2.error}`);
   }
 
   // Trigger post_merge hook
-  await triggerHook('post_merge', worktree.parentRepoPath, pane, {
+  const hookError = await runMergeHook(pane, context, worktree.parentRepoPath, Boolean(step2.teamMerge), {
     MUXBASE_TARGET_BRANCH: mainBranch,
     MUXBASE_WORKTREE_PATH: worktree.worktreePath,
     MUXBASE_REPO_NAME: worktree.repoName,
   });
+  if (hookError) return onComplete(false, hookError);
 
   log.info(`[multiMerge] Successfully merged ${worktree.repoName}`, 'multiMerge');
   return onComplete(true);
@@ -824,11 +846,11 @@ async function performWorktreeMerge(
 /**
  * Show final summary of multi-merge operation
  */
-function showMultiMergeSummary(
+async function showMultiMergeSummary(
   pane: MuxBasePane,
   context: ActionContext,
   result: MultiMergeResult
-): ActionResult {
+): Promise<ActionResult> {
   const summaryLines = result.results.map(r => {
     const name = r.worktree.repoName;
     const icon = r.status === 'completed' ? '✓' : r.status === 'skipped' ? '○' : '✗';
@@ -848,6 +870,9 @@ function showMultiMergeSummary(
 
   // If all successful, offer to close pane
   if (result.failed === 0 && result.successful > 0) {
+    if (result.teamMerge) {
+      return { type: 'success', message, dismissable: true };
+    }
     return {
       type: 'confirm',
       title: 'Multi-Merge Complete',

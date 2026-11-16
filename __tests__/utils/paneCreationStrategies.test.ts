@@ -142,9 +142,9 @@ vi.mock('../../src/utils/slug.js', () => ({
 }));
 
 vi.mock('../../src/utils/settingsManager.js', () => ({
-  SettingsManager: vi.fn(() => ({
+  SettingsManager: vi.fn(function () { return ({
     getSettings: vi.fn(() => ({ ...mockSettings })),
-  })),
+  }); }),
 }));
 
 vi.mock('../../src/constants/timing.js', () => ({

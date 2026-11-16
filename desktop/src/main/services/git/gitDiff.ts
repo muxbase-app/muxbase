@@ -1,4 +1,4 @@
-export { git, safeGit, sh } from './gitCommand.js';
+export { git, gitOrThrow, safeGit, sh } from './gitCommand.js';
 export type { WorkingTreeDiffData } from './gitDiffParser.js';
 export { __test__ } from './gitDiffParser.js';
 export {

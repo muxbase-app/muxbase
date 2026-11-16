@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppearanceSettings } from '../src/renderer/components/settings/AppearanceSettings';
 import { useElectronSettingsStore } from '../src/renderer/stores';
@@ -70,7 +70,7 @@ describe('AppearanceSettings', () => {
     expect(screen.getByRole('option', { name: 'Custom...' })).toBeTruthy();
   });
 
-  it('updates the terminal font family when a preset is selected', () => {
+  it('updates the terminal font family when a preset is selected', async () => {
     // Arrange
     render(<AppearanceSettings />);
 
@@ -80,13 +80,13 @@ describe('AppearanceSettings', () => {
     });
 
     // Assert
-    expect(updateElectronSetting).toHaveBeenCalledWith({
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({
       key: 'terminalFontFamily',
       value: LEGACY_MONACO_TERMINAL_FONT_FAMILY,
-    });
+    }));
   });
 
-  it('keeps JetBrains Mono available as a preset', () => {
+  it('keeps JetBrains Mono available as a preset', async () => {
     // Arrange
     render(<AppearanceSettings />);
 
@@ -96,13 +96,13 @@ describe('AppearanceSettings', () => {
     });
 
     // Assert
-    expect(updateElectronSetting).toHaveBeenCalledWith({
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({
       key: 'terminalFontFamily',
       value: JETBRAINS_TERMINAL_FONT_FAMILY,
-    });
+    }));
   });
 
-  it('keeps Intel One Mono available as the legibility-first xterm preset', () => {
+  it('keeps Intel One Mono available as the legibility-first xterm preset', async () => {
     // Arrange
     render(<AppearanceSettings />);
 
@@ -112,13 +112,13 @@ describe('AppearanceSettings', () => {
     });
 
     // Assert
-    expect(updateElectronSetting).toHaveBeenCalledWith({
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({
       key: 'terminalFontFamily',
       value: INTEL_ONE_MONO_TERMINAL_FONT_FAMILY,
-    });
+    }));
   });
 
-  it('offers Always dark as the escape hatch for terminals on a light app theme', () => {
+  it('offers Always dark as the escape hatch for terminals on a light app theme', async () => {
     // Arrange
     render(<AppearanceSettings />);
     const terminalTheme = screen.getByRole('combobox', { name: 'Terminal Theme' });
@@ -129,10 +129,10 @@ describe('AppearanceSettings', () => {
     // Assert
     expect(screen.getByRole('option', { name: 'Follow app theme' })).toBeTruthy();
     expect(screen.getByRole('option', { name: 'Always dark' })).toBeTruthy();
-    expect(updateElectronSetting).toHaveBeenCalledWith({ key: 'terminalTheme', value: 'dark' });
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({ key: 'terminalTheme', value: 'dark' }));
   });
 
-  it('commits UI zoom once after a slider interaction instead of on every drag event', () => {
+  it('commits UI zoom once after a slider interaction instead of on every drag event', async () => {
     render(<AppearanceSettings />);
     const zoom = screen.getByRole('slider', { name: 'Zoom Level' });
 
@@ -143,7 +143,7 @@ describe('AppearanceSettings', () => {
 
     fireEvent.pointerUp(zoom, { target: { value: '1.2' } });
 
-    expect(updateElectronSetting).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledTimes(1));
     expect(updateElectronSetting).toHaveBeenCalledWith({ key: 'uiZoom', value: 1.2 });
   });
 

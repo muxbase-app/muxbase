@@ -181,6 +181,14 @@ describe('slug and branchName separation', () => {
 describe('merge operations quote branch names', () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.doMock('node:fs', async (importOriginal) => ({
+      ...await importOriginal<typeof import('node:fs')>(),
+      realpathSync: (path: string) => path,
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('node:fs');
   });
 
   it('mergeWorktreeIntoMain quotes branch name', async () => {

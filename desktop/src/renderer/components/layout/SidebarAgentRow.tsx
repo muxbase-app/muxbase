@@ -1,4 +1,5 @@
 import type { AgentName, MuxBasePane } from 'muxbase/core';
+import { teamRoleDisplayName } from '../../../shared/team-display';
 import type { PaneActivityState } from '../../../shared/pane-activity';
 import { PANE_NAME_MAX_LENGTH, validatePaneName } from 'muxbase/pane-name';
 import {
@@ -14,6 +15,7 @@ import {
 import { cn } from '../../lib/cn';
 import type { SidebarPaneStatus } from '../../lib/sidebar-order';
 import { useWorktreeStatusStore } from '../../stores/worktree-status.store';
+import { useTeamStore } from '../../stores/team.store';
 import { AgentBrandIcon } from '../shared/agent-brand-icons';
 import { AnimatedNumber } from '../shared/AnimatedNumber';
 import { restoreFocusTo } from '../shared/focus-restore';
@@ -183,7 +185,13 @@ function SidebarAgentRowImpl({
   // `status` already resolves activity plus the waiting overlay for the whole
   // list; reading the activity store again here would disagree with the sort.
   const visual = visualStatus(status);
-  const name = pane.title || sessionTitle || pane.slug || pane.id;
+  const teamTitle = useTeamStore((state) => {
+    const run = state.runs.find((candidate) => candidate.members.some((member) => member.paneId === pane.id));
+    const member = run?.members.find((candidate) => candidate.paneId === pane.id);
+    if (!run || !member || pane.title !== `${member.label}: ${run.title}`) return undefined;
+    return `${teamRoleDisplayName(run.mode, member.role, member.label)}: ${run.title}`;
+  });
+  const name = teamTitle || pane.title || sessionTitle || pane.slug || pane.id;
   const subLine = resolveSubLine(pane, visual);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');

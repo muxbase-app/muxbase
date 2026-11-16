@@ -49,6 +49,7 @@ export interface MergeQueueItem {
  * Result of multi-merge operation
  */
 export interface MultiMergeResult {
+  teamMerge?: boolean;
   totalWorktrees: number;
   successful: number;
   failed: number;

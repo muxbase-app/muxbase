@@ -60,6 +60,7 @@ vi.mock('electron', () => ({ BrowserWindow: class {} }));
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }));
 
 vi.mock('muxbase/core', () => ({
+  AGENT_IDS: ['claude', 'codex', 'opencode', 'pi'],
   agentHasCapability: (agent: string, capability: string) => agent !== 'pi' || capability !== 'review',
   assertNever: (value: never) => { throw new Error(`Unhandled agent: ${String(value)}`); },
   assertClaudeFullscreenSupported: vi.fn().mockResolvedValue(undefined),
@@ -117,31 +118,31 @@ vi.mock('../../src/main/services/terminal-input.js', () => ({
 }));
 
 vi.mock('../../src/main/services/PaneMonitor.js', () => ({
-  PaneMonitor: vi.fn().mockImplementation(() => ({ start: vi.fn(), stop: vi.fn(), setWindow: vi.fn() })),
+  PaneMonitor: vi.fn().mockImplementation(function () { return ({ start: vi.fn(), stop: vi.fn(), setWindow: vi.fn() }); }),
 }));
 vi.mock('../../src/main/services/PaneWatcher.js', () => ({
-  PaneWatcher: vi.fn().mockImplementation(() => ({
+  PaneWatcher: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
     setWindow: vi.fn(),
     suspendSync: vi.fn(),
     resumeSync: vi.fn(),
-  })),
+  }); }),
 }));
 vi.mock('../../src/main/services/ConfigBridge.js', () => ({
-  ConfigBridge: vi.fn().mockImplementation(() => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn(), setWindow: vi.fn() })),
+  ConfigBridge: vi.fn().mockImplementation(function () { return ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn(), setWindow: vi.fn() }); }),
 }));
 vi.mock('../../src/main/services/agent-session/AgentSessionService.js', () => ({
-  AgentSessionService: vi.fn().mockImplementation(() => ({
+  AgentSessionService: vi.fn().mockImplementation(function () { return ({
     shutdown: vi.fn(),
     setWindow: vi.fn(),
     onPaneCreated: vi.fn().mockResolvedValue(undefined),
     onPaneDestroyed: vi.fn(),
     getSession: vi.fn(() => null),
-  })),
+  }); }),
 }));
 vi.mock('../../src/main/services/FileBrowserWatchService.js', () => ({
-  FileBrowserWatchService: vi.fn().mockImplementation(() => ({ stop: vi.fn().mockResolvedValue(undefined), setWindow: vi.fn() })),
+  FileBrowserWatchService: vi.fn().mockImplementation(function () { return ({ stop: vi.fn().mockResolvedValue(undefined), setWindow: vi.fn() }); }),
 }));
 vi.mock('../../src/main/services/KanbanPersistenceService.js', () => ({
   KanbanPersistenceService: vi.fn(),
@@ -1000,6 +1001,7 @@ describe('MuxBaseBridge command submission', () => {
       'logical-7',
       '%7',
       'Fix these findings',
+      { isAgent: true },
     );
     expect(coreState.tmuxService.sendShellCommand).not.toHaveBeenCalled();
     expect(coreState.tmuxService.sendTmuxKeys).not.toHaveBeenCalled();
@@ -1018,6 +1020,7 @@ describe('MuxBaseBridge command submission', () => {
       'logical-8',
       '%8',
       'Fix these findings',
+      { isAgent: true },
     );
     expect(coreState.tmuxService.sendTmuxKeys).toHaveBeenCalledOnce();
     expect(coreState.tmuxService.sendTmuxKeys).toHaveBeenCalledWith('%8', '-X cancel');
@@ -1025,6 +1028,8 @@ describe('MuxBaseBridge command submission', () => {
     expect(terminalInputState.submitTerminalCommand).toHaveBeenCalledWith(
       '%8',
       'Fix these findings',
+      undefined,
+      { isAgent: true },
     );
   });
 

@@ -34,10 +34,12 @@ import {
   registerManagedConflictPane,
 } from '../merge/conflictPaneOwnership.js';
 import { getProjectConfigPath } from '../../utils/worktreePaths.js';
+import { isTeamOwnedWriter } from '../merge/mergeSafety.js';
 
 const TMUX_DEFAULT_TIMEOUT_MS = 5000;
 const TMUX_INTERRUPT_TIMEOUT_MS = 2000;
 const TMUX_CLOSE_VERIFY_DELAY_MS = 100;
+const TEAM_WRITER_CLOSE_MESSAGE = 'Stop this run in Team Room before closing its writer. Team Room preserves candidate worktrees.';
 
 function getTrackedPanes(pane: MuxBasePane, context: ActionContext): MuxBasePane[] {
   const stateManager = StateManager.getInstance();
@@ -167,6 +169,9 @@ export async function closePane(
   pane: MuxBasePane,
   context: ActionContext
 ): Promise<ActionResult> {
+  if (isTeamOwnedWriter(pane, context)) {
+    return { type: 'error', message: TEAM_WRITER_CLOSE_MESSAGE, dismissable: true };
+  }
   const trackedPanes = getTrackedPanes(pane, context);
   const persistedMetadata = pane.conflictMerge
     || trackedPanes.find((candidate) => candidate.conflictMerge?.sourcePaneId === pane.id)?.conflictMerge;
@@ -312,6 +317,9 @@ async function executeCloseOption(
   context: ActionContext,
   option: string
 ): Promise<ActionResult> {
+  if (isTeamOwnedWriter(pane, context)) {
+    return { type: 'error', message: TEAM_WRITER_CLOSE_MESSAGE, dismissable: true };
+  }
   const lifecycleManager = PaneLifecycleManager.getInstance();
   const stateManager = StateManager.getInstance();
   const state = stateManager.getState();

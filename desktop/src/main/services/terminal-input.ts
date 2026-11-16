@@ -11,8 +11,14 @@ const TERMINAL_INPUT_BUFFER_PREFIX = 'muxbase-terminal-input-';
 // low so ordinary keystrokes retain their individual input timing.
 const KEYSTROKE_MAX_BYTES = 8;
 
+const AGENT_PASTE_BURST_WINDOW_MS = 250;
+
 export interface TmuxInputRunner {
   run(args: readonly string[], input?: Buffer): Promise<void>;
+}
+
+export interface TerminalCommandOptions {
+  isAgent?: boolean;
 }
 
 class SpawnTmuxInputRunner implements TmuxInputRunner {
@@ -22,6 +28,21 @@ class SpawnTmuxInputRunner implements TmuxInputRunner {
 }
 
 const defaultRunner = new SpawnTmuxInputRunner();
+const pendingPaneInput = new Map<string, Promise<void>>();
+
+async function withPaneInput(
+  paneId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const preceding = pendingPaneInput.get(paneId) ?? Promise.resolve();
+  const pending = preceding.then(operation, operation);
+  pendingPaneInput.set(paneId, pending);
+  try {
+    await pending;
+  } finally {
+    if (pendingPaneInput.get(paneId) === pending) pendingPaneInput.delete(paneId);
+  }
+}
 
 export async function writeTerminalInput(
   tmuxPaneId: string,
@@ -30,42 +51,47 @@ export async function writeTerminalInput(
 ): Promise<void> {
   if (!data) return;
 
-  const input = Buffer.from(data, 'utf8');
+  await withPaneInput(tmuxPaneId, async () => {
+    const input = Buffer.from(data, 'utf8');
 
   // Fast path for keystrokes: one tmux invocation, no buffer allocation, and —
   // critically for correctness — each renderer write stays a literal key
   // burst instead of being coalesced into a larger buffered input operation.
-  if (input.length <= KEYSTROKE_MAX_BYTES && !data.includes('\n')) {
-    await runner.run(['send-keys', '-l', '-t', tmuxPaneId, '--', data]);
-    return;
-  }
+    if (input.length <= KEYSTROKE_MAX_BYTES && !data.includes('\n')) {
+      await runner.run(['send-keys', '-l', '-t', tmuxPaneId, '--', data]);
+      return;
+    }
 
-  await withTmuxInputBuffer(input, runner, (bufferName) => runner.run([
-    'paste-buffer', '-d', '-r', '-b', bufferName, '-t', tmuxPaneId,
-  ]));
+    await withTmuxInputBuffer(input, runner, (bufferName) => runner.run([
+      'paste-buffer', '-d', '-r', '-b', bufferName, '-t', tmuxPaneId,
+    ]));
+  });
 }
 
-/**
- * Deliver complete command text followed by a real Enter key as one tmux
- * command list. The list is processed consecutively by one tmux client, so
- * another tmux client cannot split the command text from its Enter key. The
- * caller remains responsible for ordering work that happens before delivery.
- */
 export async function submitTerminalCommand(
   tmuxPaneId: string,
   command: string,
   runner: TmuxInputRunner = defaultRunner,
+  options: TerminalCommandOptions = {},
 ): Promise<void> {
-  if (!command) {
-    await runner.run(['send-keys', '-t', tmuxPaneId, 'Enter']);
-    return;
-  }
+  await withPaneInput(tmuxPaneId, async () => {
+    if (!command) {
+      await runner.run(['send-keys', '-t', tmuxPaneId, 'Enter']);
+      return;
+    }
 
-  await withTmuxInputBuffer(Buffer.from(command, 'utf8'), runner, (bufferName) => runner.run([
-    'paste-buffer', '-d', '-r', '-b', bufferName, '-t', tmuxPaneId,
-    ';',
-    'send-keys', '-t', tmuxPaneId, 'Enter',
-  ]));
+    await withTmuxInputBuffer(Buffer.from(command, 'utf8'), runner, async (bufferName) => {
+      const paste = ['paste-buffer', '-d', '-r', '-b', bufferName, '-t', tmuxPaneId];
+      const enter = ['send-keys', '-t', tmuxPaneId, 'Enter'];
+      if (!options.isAgent) {
+        await runner.run([...paste, ';', ...enter]);
+        return;
+      }
+      await runner.run(paste);
+      await new Promise((resolve) => setTimeout(resolve, AGENT_PASTE_BURST_WINDOW_MS));
+      await runner.run(enter);
+    });
+  });
 }
 
 async function withTmuxInputBuffer(

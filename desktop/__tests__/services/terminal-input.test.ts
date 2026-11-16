@@ -122,21 +122,48 @@ describe('writeTerminalInput', () => {
 });
 
 describe('submitTerminalCommand', () => {
-  it('pastes command text and sends Enter in one ordered tmux command list', async () => {
+  it('separates Enter from agent paste, but keeps the whole submission ordered', async () => {
+    const runner = new RecordingTmuxInputRunner();
+
+    await submitTerminalCommand('%19', 'Build the feature', runner, { isAgent: true });
+
+    expect(runner.commands.map((command) => command.args[0])).toEqual([
+      'load-buffer', 'paste-buffer', 'send-keys',
+    ]);
+    expect(runner.commands.at(-1)?.args).toEqual(['send-keys', '-t', '%19', 'Enter']);
+  });
+
+  it('does not interleave another command or keystroke with a delayed agent submission', async () => {
+    const runner = new RecordingTmuxInputRunner();
+
+    await Promise.all([
+      submitTerminalCommand('%19', 'First task', runner, { isAgent: true }),
+      submitTerminalCommand('%19', 'Second task', runner, { isAgent: true }),
+      writeTerminalInput('%19', 'x', runner),
+    ]);
+
+    expect(runner.commands.map((command) => command.args[0])).toEqual([
+      'load-buffer', 'paste-buffer', 'send-keys',
+      'load-buffer', 'paste-buffer', 'send-keys', 'send-keys',
+    ]);
+    expect(runner.commands[0].input?.toString()).toBe('First task');
+    expect(runner.commands[3].input?.toString()).toBe('Second task');
+    expect(runner.commands.at(-1)?.args.at(-1)).toBe('x');
+  });
+
+  it('submits shell text and Enter in one tmux command list without an agent delay', async () => {
     const runner = new RecordingTmuxInputRunner();
 
     await submitTerminalCommand('%19', 'printf ready', runner);
 
     expect(runner.commands).toHaveLength(2);
-    const loadCommand = runner.commands[0];
-    const submitCommand = runner.commands[1];
+    const [loadCommand, pasteCommand] = runner.commands;
     const bufferName = loadCommand.args[2];
     expect(loadCommand.args).toEqual(['load-buffer', '-b', bufferName, '-']);
     expect(loadCommand.input).toEqual(Buffer.from('printf ready', 'utf8'));
-    expect(submitCommand.args).toEqual([
+    expect(pasteCommand.args).toEqual([
       'paste-buffer', '-d', '-r', '-b', bufferName, '-t', '%19',
-      ';',
-      'send-keys', '-t', '%19', 'Enter',
+      ';', 'send-keys', '-t', '%19', 'Enter',
     ]);
   });
 
@@ -158,7 +185,7 @@ describe('submitTerminalCommand', () => {
     await submitTerminalCommand('%19', command, runner);
 
     expect(runner.commands[0].input).toEqual(Buffer.from(command, 'utf8'));
-    expect(runner.commands[1].args).toContain(';');
+    expect(runner.commands[1].args.slice(-5)).toEqual([';', 'send-keys', '-t', '%19', 'Enter']);
   });
 
   it('cleans the tmux buffer when the ordered submission fails', async () => {

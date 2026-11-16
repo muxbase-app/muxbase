@@ -8,6 +8,8 @@ import { SidebarAgentRow } from '../../src/renderer/components/layout/SidebarAge
 import type { SidebarPaneStatus } from '../../src/renderer/lib/sidebar-order';
 import { useWorktreeStatusStore } from '../../src/renderer/stores/worktree-status.store';
 import { usePaneActivityStore } from '../../src/renderer/stores/pane-activity.store';
+import { useTeamStore } from '../../src/renderer/stores/team.store';
+import { teamRun } from '../renderer/team-test-support';
 
 function pane(overrides: Partial<MuxBasePane> = {}): MuxBasePane {
   return {
@@ -69,6 +71,35 @@ afterEach(() => {
   cleanup();
   useWorktreeStatusStore.getState().remove('p1');
   usePaneActivityStore.getState().reset();
+  useTeamStore.setState({ runs: [] });
+});
+
+describe('SidebarAgentRow Team identity', () => {
+  it.each([
+    ['pair', 'developer', 'Developer', 'Writer'],
+    ['pair', 'tester', 'Tester', 'Reviewer'],
+    ['duel', 'architect', 'Candidate B', 'Writer B'],
+    ['duel', 'tester', 'Tester', 'Comparator'],
+  ] as const)('shows %s %s with the same role name as Team Room', (mode, role, storedLabel, displayLabel) => {
+    const run = teamRun({
+      mode,
+      members: [{ agent: 'claude', label: storedLabel, paneId: 'p1', readOnly: role === 'tester', role, worktreePath: '/work/source' }],
+    });
+    useTeamStore.setState({ runs: [run] });
+
+    const container = renderPaneRow({ teamRunId: run.id, title: `${storedLabel}: ${run.title}` });
+
+    expect(within(container).getByRole('button', { name: `${displayLabel}: ${run.title} · Idle` })).toBeTruthy();
+  });
+
+  it('preserves a custom renamed Team pane title', () => {
+    const run = teamRun({ mode: 'pair', members: [{ agent: 'claude', label: 'Developer', paneId: 'p1', readOnly: false, role: 'developer', worktreePath: '/work/source' }] });
+    useTeamStore.setState({ runs: [run] });
+
+    const container = renderPaneRow({ teamRunId: run.id, title: 'My custom name' });
+
+    expect(within(container).getByRole('button', { name: 'My custom name · Idle' })).toBeTruthy();
+  });
 });
 
 // The status indicator subtree is aria-hidden — status already reaches

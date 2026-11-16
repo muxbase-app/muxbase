@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ToastEvent } from '../../shared/ipc-types';
 
 export interface Toast {
   id: string;
@@ -8,12 +9,14 @@ export interface Toast {
   detail?: string;
   dismissMs: number;
   timestamp: number;
+  teamReady?: ToastEvent['teamReady'];
 }
 
 interface ToastOptions {
   title?: string;
   detail?: string;
   dismissMs?: number;
+  teamReady?: ToastEvent['teamReady'];
 }
 
 const DEFAULT_DISMISS_MS = 5_000;
@@ -46,6 +49,7 @@ export const useNotificationStore = create<NotificationState & NotificationActio
         detail: options?.detail,
         dismissMs,
         timestamp: Date.now(),
+        ...(options?.teamReady ? { teamReady: options.teamReady } : {}),
       };
 
       set((state) => ({ toasts: [...state.toasts, toast] }));

@@ -109,6 +109,7 @@ export interface CreatePaneOptions {
   review?: ReviewMetadata;
   /** Duel linkage metadata, set when this pane is one side of a comparison */
   duel?: DuelMetadata;
+  teamRunId?: string;
   /** OTLP endpoint URL injected into Claude pane env so Claude Code reports telemetry to MuxBase. */
   otlpEndpoint?: string;
   /** Explicit user consent for installing lifecycle adapters that write agent configuration. */
@@ -196,6 +197,7 @@ export async function createPane(
     role,
     review,
     duel,
+    teamRunId,
   } = options;
   const { resumeSessionId } = options;
   const initialTerminalSize = normalizeInitialTerminalSize(options.initialTerminalSize);
@@ -735,6 +737,7 @@ export async function createPane(
       model: options.model,
       effort: options.effort,
       agentSessionId: resumeSessionId,
+      teamRunId,
     };
 
     if (options.earlyEmit) {
@@ -760,6 +763,7 @@ export async function createPane(
           activityJournal: getPaneActivityJournalPath(activityIncarnationId),
           activityIncarnationId,
           enableActivityAdapters: options.enableActivityAdapters,
+          readOnly,
         },
       );
     } else {
@@ -840,7 +844,7 @@ export async function createPane(
 
 type AgentLaunchSettings = MuxBaseConfig['settings'] & { opencodeModel?: string };
 
-function applyPerPaneOverride(
+export function applyPerPaneOverride(
   settings: AgentLaunchSettings,
   agent: AgentName | undefined,
   model: string | undefined,

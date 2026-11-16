@@ -27,6 +27,7 @@ interface PaneActionWorkflowDependencies {
   getPanes(): MuxBasePane[];
   getPaneCurrentCommand(paneId: string): Promise<string>;
   getProjectRoot(): string;
+  isTeamOwnedWriter?(pane: MuxBasePane): boolean;
   paneExists(paneId: string): Promise<boolean>;
   persistPanesTransactionally(panes: MuxBasePane[]): void;
   reapOrphanedTranscripts(): Promise<void>;
@@ -42,6 +43,10 @@ export class PaneActionWorkflow {
     log.info('bridge', 'Close pane requested', { paneId });
     const pane = this.dependencies.getPane(paneId);
     if (!pane) return { type: 'error', message: 'Pane not found' };
+
+    if (this.dependencies.isTeamOwnedWriter?.(pane)) {
+      return { type: 'error', message: 'Stop this run in Team Room before closing its writer. Team Room preserves candidate worktrees.', dismissable: true };
+    }
 
     const context = this.dependencies.buildActionContext();
     const result = this.decorateCloseResult(pane, await closePane(pane, context));

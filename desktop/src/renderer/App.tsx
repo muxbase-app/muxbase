@@ -16,6 +16,7 @@ import { useIpcListener } from './hooks/useIpcListener';
 import { useAppBootState } from './hooks/useAppBootState';
 import { useConversationTopicsSync } from './hooks/useConversationTopicsSync';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useTeamRuns } from './hooks/useTeamRuns';
 import { useTheme } from './hooks/useTheme';
 import {
   BOOT_SIDEBAR_COLLAPSED,
@@ -50,6 +51,9 @@ import {
   useUiStore,
   useWorkspacePickerStore,
 } from './stores';
+import { isTeamToastVisible } from './stores/team.store';
+
+const TEAM_TOAST_DISMISS_MS = 12_000;
 
 export default function App() {
   const bootState = useAppBootState();
@@ -191,7 +195,9 @@ export default function App() {
         warnInvalidPayload('toast', event);
         return;
       }
-      addToast(e.message, e.severity);
+      const ui = useUiStore.getState();
+      if (isTeamToastVisible(e, ui.activeView, ui.viewMode)) return;
+      addToast(e.message, e.severity, e.teamReady ? { dismissMs: TEAM_TOAST_DISMISS_MS, teamReady: e.teamReady } : undefined);
     },
     [addToast],
   );
@@ -314,6 +320,7 @@ export default function App() {
     })();
   }, []);
 
+  useTeamRuns();
   useIpcListener(IPC_EVENT.APP_FILE_FLUSH_REQUESTED, handleFileFlushRequested);
   useIpcListener(IPC_EVENT.PANE_LIST_CHANGED, handlePaneListChanged);
   useIpcListener(IPC_EVENT.PANE_ACTIVITY_CHANGED, handlePaneActivityChanged);

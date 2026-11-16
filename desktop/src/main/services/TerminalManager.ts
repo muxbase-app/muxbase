@@ -19,7 +19,7 @@ import { ElectronSettingsService } from './ElectronSettingsService.js';
 import { log } from './Logger.js';
 import { RuntimeActivityMetrics } from './RuntimeActivityMetrics.js';
 import { TerminalControlClients } from './terminal-control-clients.js';
-import { submitTerminalCommand, writeTerminalInput } from './terminal-input.js';
+import { submitTerminalCommand, type TerminalCommandOptions, writeTerminalInput } from './terminal-input.js';
 import { type PaneDimensions, readPaneDimensions } from './terminal-pane-dimensions.js';
 import {
   compactAgentScrollbackForReplay,
@@ -524,6 +524,7 @@ export class TerminalManager {
     paneId: string,
     expectedTmuxPaneId: string,
     command: string,
+    options: TerminalCommandOptions = {},
   ): Promise<boolean> {
     const stream = this.streams.get(paneId);
     if (!stream || stream.tmuxPaneId !== expectedTmuxPaneId) return false;
@@ -565,12 +566,8 @@ export class TerminalManager {
           this.assertCommandStreamCurrent(stream, expectedTmuxPaneId);
         }
 
-        // The tmux command list pastes the raw command text and sends a real
-        // Enter consecutively. Mark delivery as attempted before awaiting it:
-        // a failed command list may already have pasted bytes, so replaying
-        // claimed input would risk a duplicate command.
         deliveryAttempted = true;
-        await submitTerminalCommand(expectedTmuxPaneId, `${precedingInput}${command}`);
+        await submitTerminalCommand(expectedTmuxPaneId, `${precedingInput}${command}`, undefined, options);
         if (stream.mode === 'capture') {
           this.scheduleWriteCapture(stream);
         }
