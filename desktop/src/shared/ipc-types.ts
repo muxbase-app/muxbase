@@ -4,6 +4,7 @@ import type {
   SettingsScope,
   AgentName,
 } from 'muxbase/core';
+import type { TeamSettingsDefaults } from './team-settings.js';
 import type { TerminalAlternateScreenMode } from './terminal-scroll-protocol.js';
 import type { TerminalThemePreference } from './theme-mode.js';
 
@@ -825,6 +826,7 @@ type TerminalOsc52ClipboardMode = 'allow' | 'off';
 export interface ToastEvent {
   message: string;
   severity: 'success' | 'error' | 'info' | 'warning';
+  teamReady?: { projectRoot: string; runId: string };
 }
 
 export interface ProgressEvent {
@@ -911,7 +913,7 @@ export interface SystemCheckResult {
 export type SidebarOrganize = 'project' | 'flat';
 export type SidebarSort = 'priority' | 'updated' | 'manual';
 
-export interface ElectronSettings {
+export interface ElectronSettings extends TeamSettingsDefaults {
   // Appearance
   theme: 'dark' | 'light' | 'colorful' | 'dark-colorful' | 'system';
   terminalFontFamily: string;

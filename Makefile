@@ -4,7 +4,7 @@ E2E_HEADED ?= 0
 
 export NODE_OPTIONS := --import $(abspath $(SCRIPTS_DIR)/node24-crypto-fix.mjs) $(NODE_OPTIONS)
 
-.PHONY: install install-deps build dev dev-worktree run start test unit-test run-test test-e2e test-e2e-stable test-e2e-live test-e2e-kanban test-e2e-pane test-e2e-multi-agent test-e2e-live-agent-terminal test-e2e-multi-agent-slow test-e2e-conflict test-e2e-conflict-slow typecheck clean help all core-build pack dist open release release-verify doctor bootstrap lint internal-refs-gate demo-record demo-assets demo
+.PHONY: install install-deps build dev dev-worktree run start test unit-test run-test test-e2e test-e2e-stable test-e2e-live test-e2e-kanban test-e2e-team test-e2e-pane test-e2e-multi-agent test-e2e-live-agent-terminal test-e2e-multi-agent-slow test-e2e-conflict test-e2e-conflict-slow typecheck clean help all core-build pack dist open release release-verify doctor bootstrap lint internal-refs-gate demo-record demo-assets demo
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -87,6 +87,9 @@ test-e2e-live-agent-terminal: core-build build ## Run live Claude/OpenCode termi
 
 test-e2e-multi-agent-slow: core-build build ## Run multi-agent E2E in slow visual mode (pauses, on-screen overlays, UI-driven creation, holds window open at end)
 	cd $(DESKTOP_DIR) && MUXBASE_E2E=1 MUXBASE_E2E_HEADED=1 MUXBASE_E2E_ALLOW_STORE_COERCE=1 MUXBASE_E2E_SLOW=1 pnpm exec vitest run --config vitest.config.ts --no-file-parallelism --testTimeout=1200000 __tests__/e2e/multi-agent-conversation.e2e.test.ts
+
+test-e2e-team: core-build build ## Run Team Room E2E with real Claude Code and Codex
+	cd $(DESKTOP_DIR) && MUXBASE_E2E=1 MUXBASE_E2E_LIVE_AGENTS=1 MUXBASE_E2E_HEADED=$(E2E_HEADED) MUXBASE_E2E_ALLOW_STORE_COERCE=1 pnpm exec vitest run --config vitest.config.ts --no-file-parallelism --testTimeout=1800000 __tests__/e2e/team-room.e2e.test.ts
 
 test-e2e-conflict: core-build build ## Run conflict resolution E2E test only
 	cd $(DESKTOP_DIR) && MUXBASE_E2E=1 MUXBASE_E2E_HEADED=$(E2E_HEADED) pnpm exec vitest run --config vitest.config.ts --no-file-parallelism __tests__/e2e/conflict-resolution.e2e.test.ts

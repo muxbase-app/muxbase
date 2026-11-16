@@ -71,6 +71,8 @@ vi.mock('@electron-toolkit/utils', () => ({
 }));
 
 vi.mock('muxbase/core', () => ({
+  AGENT_IDS: ['claude', 'codex', 'opencode', 'pi'],
+  agentHasCapability: (agent: string, capability: string) => agent !== 'pi' || capability !== 'review',
   assertClaudeFullscreenSupported: vi.fn().mockResolvedValue(undefined),
   LogService: { getInstance: () => coreState.logService },
   SettingsManager: { getInstance: () => ({ getSettings: () => ({ claudeFullscreenRendering: true }) }) },
@@ -180,28 +182,26 @@ function makePaneWatcherInstance(): PaneWatcherInstance {
 }
 
 vi.mock('../../src/main/services/PaneMonitor.js', () => ({
-  PaneMonitor: vi.fn().mockImplementation((
-    onStatusDetected: (event: { paneId: string; status: string }) => void,
-  ) => {
+  PaneMonitor: vi.fn().mockImplementation(function (onStatusDetected: (event: { paneId: string; status: string }) => void) {
     paneMonitorState.onStatusDetected = onStatusDetected;
     return paneMonitorSpies;
   }),
 }));
 vi.mock('../../src/main/services/PaneWatcher.js', () => ({
-  PaneWatcher: vi.fn().mockImplementation(() => makePaneWatcherInstance()),
+  PaneWatcher: vi.fn().mockImplementation(function () { return makePaneWatcherInstance(); }),
 }));
 vi.mock('../../src/main/services/ConfigBridge.js', () => ({
-  ConfigBridge: vi.fn().mockImplementation(() => configBridgeSpies),
+  ConfigBridge: vi.fn().mockImplementation(function () { return configBridgeSpies; }),
 }));
 vi.mock('../../src/main/services/agent-session/AgentSessionService.js', () => ({
-  AgentSessionService: vi.fn().mockImplementation(() => agentSessionSpies),
+  AgentSessionService: vi.fn().mockImplementation(function () { return agentSessionSpies; }),
 }));
 vi.mock('../../src/main/services/terminal-stream-state.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../src/main/services/terminal-stream-state')>(),
   displayPaneFormat: displayPaneFormatMock,
 }));
 vi.mock('../../src/main/services/FileBrowserWatchService.js', () => ({
-  FileBrowserWatchService: vi.fn().mockImplementation(() => fileBrowserWatchSpies),
+  FileBrowserWatchService: vi.fn().mockImplementation(function () { return fileBrowserWatchSpies; }),
 }));
 vi.mock('../../src/main/services/TerminalStreamService.js', () => ({
   detachTerminalPane: terminalStreamSpies.detachPane,

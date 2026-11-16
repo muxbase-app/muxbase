@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '../../lib/cn';
-import { useNotificationStore } from '../../stores';
+import { useNotificationStore, useUiStore } from '../../stores';
 import type { Toast as ToastType } from '../../stores';
+import { selectTeamRunFromNotice } from '../../stores/team.store';
 
 const SEVERITY_COLORS: Record<ToastType['severity'], string> = {
   success: 'bg-[var(--success)]',
@@ -14,6 +15,26 @@ const SEVERITY_COLORS: Record<ToastType['severity'], string> = {
 interface ToastProps {
   toast: ToastType;
   onDismiss: (id: string) => void;
+}
+
+function TeamToastAction({ identity, onOpened }: Readonly<{ identity: NonNullable<ToastType['teamReady']>; onOpened: () => void }>) {
+  const open = () => {
+    selectTeamRunFromNotice(identity);
+    const ui = useUiStore.getState();
+    ui.setActiveView('dashboard');
+    ui.setViewMode('team');
+    onOpened();
+  };
+  return (
+    <button
+      className="shrink-0 rounded px-2 py-0.5 text-[11px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/15"
+      data-testid="toast-open-team"
+      onClick={open}
+      type="button"
+    >
+      Open
+    </button>
+  );
 }
 
 export function Toast({ toast, onDismiss }: ToastProps) {
@@ -86,6 +107,8 @@ export function Toast({ toast, onDismiss }: ToastProps) {
           <p className="text-xs text-[var(--text)]">{toast.message}</p>
         )}
       </div>
+
+      {toast.teamReady && <TeamToastAction identity={toast.teamReady} onOpened={() => onDismiss(toast.id)} />}
 
       <button
         onClick={() => onDismiss(toast.id)}

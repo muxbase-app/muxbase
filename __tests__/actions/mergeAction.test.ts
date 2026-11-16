@@ -117,4 +117,47 @@ describe('mergePane', () => {
     expect(result.type).toBe('error');
     expect(detectAllWorktrees).not.toHaveBeenCalled();
   });
+
+  it('rejects an uncertified team merge before inspecting or mutating worktrees', async () => {
+    const pane: MuxBasePane = {
+      id: 'team-developer',
+      paneId: '%3',
+      prompt: 'Build',
+      slug: 'team-developer',
+      worktreePath: '/workspace/team',
+    };
+    const context: ActionContext = {
+      panes: [pane],
+      projectName: 'project',
+      savePanes: vi.fn(),
+      sessionName: 'muxbase-project',
+      validateMerge: async () => 'The team has not approved this tree',
+    };
+
+    const result = await mergePane(pane, context);
+
+    expect(result).toMatchObject({ type: 'error', message: 'The team has not approved this tree' });
+    expect(detectAllWorktrees).not.toHaveBeenCalled();
+  });
+
+  it('fails closed for persisted team panes when no approval validator is installed', async () => {
+    const pane: MuxBasePane = {
+      id: 'team-developer',
+      paneId: '%3',
+      prompt: 'Build',
+      slug: 'team-developer',
+      teamRunId: 'team-run',
+      worktreePath: '/workspace/team',
+    };
+
+    const result = await mergePane(pane, {
+      panes: [pane],
+      projectName: 'project',
+      savePanes: vi.fn(),
+    });
+
+    expect(result.type).toBe('error');
+    expect(result.message).toContain('approval');
+    expect(detectAllWorktrees).not.toHaveBeenCalled();
+  });
 });

@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/ipc-types.js';
 import { formatError } from '../../utils/formatError.js';
 import { log } from '../Logger.js';
+import type { TeamDuelCandidateResponse, TeamDuelLaunchOptions } from '../team/teamWorkflowTypes.js';
 
 export interface DuelRequest {
   claudeRenderer?: 'classic';
@@ -29,14 +30,21 @@ export interface DuelRequest {
 }
 
 interface DuelPaneLaunchOptions {
+  agentPrompt?: string;
   claudeRenderer?: 'classic';
   duel: DuelMetadata;
   effort?: string;
   model?: string;
+  paneTitle?: string;
   projectRoot?: string;
   slugBase: string;
   slugSuffix: string;
+  readOnly?: boolean;
+  role?: 'review';
+  teamRunId?: string;
   useWorktree?: boolean;
+  worktreeSeedFile?: TeamDuelLaunchOptions['worktreeSeedFile'];
+  worktreeStartPoint?: string;
 }
 
 interface DuelWorkflowDependencies {
@@ -65,8 +73,46 @@ function validateDuelRequest(request: DuelRequest): string | null {
   return null;
 }
 
+export async function closePaneAndBranch(
+  pane: MuxBasePane,
+  context: ActionContext,
+  closePane: (pane: MuxBasePane, context: ActionContext) => Promise<ActionResult>,
+  reapOrphanedTranscripts: () => Promise<void>,
+): Promise<string | null> {
+  const closeResult = await closePane(pane, context);
+  const result = closeResult.type === 'choice' && closeResult.onSelect
+    ? await closeResult.onSelect('kill_clean_branch')
+    : closeResult;
+  if (result.type === 'error') return result.message;
+  if (result.type !== 'success') return `Unable to close pane ${pane.slug}`;
+  void reapOrphanedTranscripts();
+  return null;
+}
+
 export class DuelWorkflow {
   constructor(private readonly dependencies: DuelWorkflowDependencies) {}
+
+  async createTeamCandidate(prompt: string, side: DuelSideConfig, options: TeamDuelLaunchOptions): Promise<TeamDuelCandidateResponse> {
+    if (!options.teamRunId || options.duel.groupId !== options.teamRunId || !options.worktreeStartPoint || !options.worktreeSeedFile || options.readOnly) {
+      return { error: 'Team Duel candidates require durable ownership, a captured base, and an initial round before launch', success: false };
+    }
+    const survivor = () => this.dependencies.getPanes().find((pane) => pane.teamRunId === options.teamRunId && pane.duel?.groupId === options.duel.groupId && pane.duel.role === options.duel.role);
+    const existing = survivor();
+    if (existing) return { pane: existing, recovered: true, success: true };
+    try {
+      const result = await this.dependencies.createPane(prompt, side.agent, {
+        ...options,
+        effort: side.effort,
+        model: side.model,
+        slugSuffix: options.duel.role,
+      });
+      if (result.success && result.pane?.duel?.siblingPaneId) this.linkSibling(result.pane.duel.siblingPaneId, result.pane.id);
+      return result;
+    } catch (error) {
+      log.error('team', 'Native Team Duel candidate launch failed', error);
+      return { error: formatError(error), pane: survivor(), success: false };
+    }
+  }
 
   async create(request: DuelRequest): Promise<PaneDuelCreateResponse> {
     const validationError = validateDuelRequest(request);
@@ -167,12 +213,14 @@ export class DuelWorkflow {
   async resolve(winnerPaneId: string): Promise<PaneDuelResolveResponse> {
     const winner = this.dependencies.getPane(winnerPaneId);
     if (!winner) return { success: false, error: 'Pane not found' };
+    if (winner.teamRunId) return { success: false, error: 'Choose the Team Duel winner in the Team room. Both candidate worktrees must be preserved.' };
     if (!winner.duel) return { success: true };
 
     const { groupId, role, siblingPaneId } = winner.duel;
     const groupPanes = this.dependencies.getPanes().filter(
       (pane) => pane.duel?.groupId === groupId,
     );
+    if (groupPanes.some((pane) => pane.teamRunId)) return { success: false, error: 'This Duel belongs to a Team run; ordinary Duel resolution is blocked' };
     const linkedSibling = siblingPaneId
       ? groupPanes.find((pane) => pane.id === siblingPaneId && pane.duel?.role !== role)
       : undefined;
@@ -197,7 +245,7 @@ export class DuelWorkflow {
   clearMetadata(paneIds: readonly string[]): void {
     const target = new Set(paneIds);
     const updated = this.dependencies.getPanes().map((pane) => {
-      if (!target.has(pane.id) || !pane.duel) return pane;
+      if (!target.has(pane.id) || !pane.duel || pane.teamRunId) return pane;
       const { duel: _duel, ...rest } = pane;
       return rest;
     });

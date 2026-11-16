@@ -1,10 +1,11 @@
-import { FolderPlus, FolderTree, type LucideIcon, MessagesSquare, PackageOpen, Settings, TerminalSquare } from 'lucide-react';
-import type { ActiveView, SettingsCategory } from '../../stores/ui.store';
+import { FolderPlus, FolderTree, type LucideIcon, MessagesSquare, PackageOpen, Settings, TerminalSquare, UsersRound } from 'lucide-react';
+import type { ActiveView, SettingsCategory, ViewMode } from '../../stores/ui.store';
 
 export const FILE_BROWSER_ACTION_ID = 'file-browser';
 export const MARKETPLACE_ACTION_ID = 'marketplace';
 export const OPEN_PROJECT_ACTION_ID = 'open-project';
 export const SHELL_ACTION_ID = 'shell';
+export const TEAM_ACTION_ID = 'team';
 export const TOPICS_ACTION_ID = 'topics';
 export const SETTINGS_ACTION_ID = 'settings';
 
@@ -13,6 +14,7 @@ type SidebarActionId =
   | typeof MARKETPLACE_ACTION_ID
   | typeof OPEN_PROJECT_ACTION_ID
   | typeof SHELL_ACTION_ID
+  | typeof TEAM_ACTION_ID
   | typeof TOPICS_ACTION_ID
   | typeof SETTINGS_ACTION_ID;
 
@@ -25,9 +27,12 @@ interface SidebarActionContext {
   createShellPane: () => void;
   fileBrowserOpen: boolean;
   openSettings: (category?: SettingsCategory) => void;
+  openTeam: () => void;
   openWorkspacePicker: () => void;
   setActiveView: (view: ActiveView) => void;
+  teamNeedsYou: number;
   toggleFileBrowser: () => void;
+  viewMode: ViewMode;
 }
 
 interface SidebarActionDefinition {
@@ -72,6 +77,16 @@ const SIDEBAR_ACTIONS: readonly SidebarActionDefinition[] = [
     onSelect: (context) => context.createShellPane(),
     testId: SIDEBAR_SHELL_TEST_ID,
     title: 'Open a shell in this project',
+  },
+  {
+    id: TEAM_ACTION_ID,
+    Icon: UsersRound,
+    behavior: 'view',
+    expandedLabel: (context) => (context.teamNeedsYou > 0 ? `Team (${context.teamNeedsYou} needs you)` : 'Team'),
+    isActive: (context) => context.activeView === 'dashboard' && context.viewMode === 'team',
+    onSelect: (context) => context.openTeam(),
+    testId: 'sidebar-team',
+    title: 'Team',
   },
   {
     id: FILE_BROWSER_ACTION_ID,

@@ -101,6 +101,19 @@ export function ResourceBar() {
             </button>
           )}
           <button
+            aria-pressed={viewMode === 'team'}
+            data-testid="view-team"
+            onClick={() => setViewMode('team')}
+            className={cn(
+              'px-2.5 py-1 text-[10px] font-medium transition-colors border-l border-[var(--border)]',
+              viewMode === 'team'
+                ? 'bg-[var(--accent)]/15 text-[var(--accent)]'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--surface-raised)]',
+            )}
+          >
+            Team
+          </button>
+          <button
             onClick={handleFocus}
             disabled={stats.total === 0}
             className={cn(

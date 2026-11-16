@@ -6,6 +6,7 @@ const mockTmuxInstance = vi.hoisted(() => ({
   respawnPane: vi.fn(),
 }));
 const assertClaudeFullscreenSupported = vi.hoisted(() => vi.fn());
+const getReadOnlyFlags = vi.hoisted(() => vi.fn((agent: string) => `readonly-${agent}`));
 
 vi.mock('../../src/services/LogService.js', () => ({
   LogService: {
@@ -27,6 +28,7 @@ vi.mock('../../src/utils/agentLaunch.js', () => ({
   getOpencodeTuiCommand: (scrollbackMode: boolean | undefined) =>
     scrollbackMode === true ? 'opencode --mini' : 'opencode',
   getPermissionFlags: vi.fn(() => ''),
+  getReadOnlyFlags,
 }));
 
 vi.mock('../../src/utils/agentTerminalEnvironment.js', () => ({
@@ -62,6 +64,23 @@ describe('resumeAgentInPane', () => {
     mockTmuxInstance.getPaneCurrentCommand.mockResolvedValue('bash');
     mockTmuxInstance.respawnPane.mockResolvedValue(undefined);
   });
+
+  it.each(['claude', 'codex', 'opencode'] as const)(
+    'keeps %s reviewers read-only when resuming a session',
+    async (agent) => {
+      await resumeAgentInPane(
+        '%1',
+        agent,
+        { permissionMode: 'auto' },
+        'review-session',
+        undefined,
+        { readOnly: true },
+      );
+
+      expect(getReadOnlyFlags).toHaveBeenCalledWith(agent);
+      expect(mockTmuxInstance.respawnPane.mock.calls[0]?.[0]?.command).toContain(`readonly-${agent}`);
+    },
+  );
 
   it('resumes a persisted OpenCode session in the standard interface by default', async () => {
     // Arrange

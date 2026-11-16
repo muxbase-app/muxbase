@@ -116,6 +116,28 @@ describe('closeAction', () => {
     vi.mocked(execSync).mockReturnValue(Buffer.from(''));
   });
 
+  it('refuses destructive close for a Team writer before dispatching any cleanup', async () => {
+    const pane = createWorktreePane({ teamRunId: 'team-run' });
+    const result = await closePane(pane, createMockContext([pane]));
+
+    expect(result).toMatchObject({ type: 'error', message: expect.stringContaining('Team Room') });
+    expect(mockEnqueueCleanup).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalled();
+  });
+
+  it('revalidates authoritative Team ownership before executing a deferred close choice', async () => {
+    const pane = createWorktreePane();
+    let owned = false;
+    const context = { ...createMockContext([pane]), isTeamOwnedWriter: () => owned };
+    const choice = await closePane(pane, context);
+    owned = true;
+
+    const result = await choice.onSelect?.('kill_clean_branch');
+
+    expect(result).toMatchObject({ type: 'error' });
+    expect(mockEnqueueCleanup).not.toHaveBeenCalled();
+  });
+
   describe('shell panes', () => {
     it('should close shell pane immediately without presenting options', async () => {
       const mockPane = createShellPane({ id: 'muxbase-1', paneId: '%42' });

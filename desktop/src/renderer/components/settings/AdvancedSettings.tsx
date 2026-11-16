@@ -78,9 +78,8 @@ export function AdvancedSettings() {
           <ElectronSettingRow
             settingKey="enableAgentLifecycleAdapters"
             label="Agent Lifecycle Adapters"
-            description="Allow MuxBase to install local lifecycle hook definitions for supported agents. This writes only hook configuration and records no prompt or tool content."
+            description="Allow MuxBase to install local lifecycle hook definitions for supported agents. This writes only hook configuration and records no prompt or tool content. Team Room requires it."
             type="boolean"
-            badge="Experimental"
           />
           <ElectronSettingRow
             settingKey="enableReviewAgent"

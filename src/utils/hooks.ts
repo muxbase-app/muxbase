@@ -12,6 +12,7 @@ import os from 'os';
 import path from 'path';
 import { LogService } from '../services/LogService.js';
 import type { MuxBasePane } from '../types.js';
+import { execFileAsync } from './execAsync.js';
 import { EXAMPLE_HOOKS, HOOKS_DOCUMENTATION, HOOKS_README } from './hooksDocs.js';
 import {
   getProjectHooksDir,
@@ -304,12 +305,31 @@ export async function triggerHook(
   }
 }
 
-/**
- * Execute a hook synchronously (blocking)
- *
- * Use sparingly - only for hooks that MUST complete before proceeding.
- * Most hooks should use triggerHook() instead.
- */
+export async function triggerHookWithResult(
+  hookName: HookType,
+  projectRoot: string,
+  pane?: MuxBasePane,
+  extraData?: Record<string, string>,
+  timeoutMs: number = 30000
+): Promise<{ success: boolean; output?: string; error?: string }> {
+  const hookPath = findHook(projectRoot, hookName);
+  if (!hookPath) return { success: true };
+  try {
+    const env = await buildHookEnvironment(projectRoot, pane, extraData);
+    const output = await execFileAsync(hookPath, [], {
+      cwd: projectRoot,
+      env,
+      maxBuffer: 1024 * 1024,
+      timeout: timeoutMs,
+    });
+    return { success: true, output };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    LogService.getInstance().error(`${hookName} failed: ${message}`, LOG_SCOPE);
+    return { success: false, error: message };
+  }
+}
+
 export async function triggerHookSync(
   hookName: HookType,
   projectRoot: string,

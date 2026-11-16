@@ -12,12 +12,14 @@ import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { MarketplaceSettings } from './MarketplaceSettings';
 import { SettingGroup } from './SettingGroup';
 import { TerminalSettings } from './TerminalSettings';
+import { TeamSettings } from './TeamSettings';
 import { WindowSettings } from './WindowSettings';
 
 const CATEGORIES: { id: SettingsCategory; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'agent', label: 'Agent' },
+  { id: 'team', label: 'Team' },
   { id: 'worktree', label: 'Worktree' },
   { id: 'marketplace', label: 'Marketplace' },
   { id: 'window', label: 'Window' },
@@ -221,6 +223,7 @@ export function SettingsView() {
                 {category === 'appearance' && <AppearanceSettings />}
                 {category === 'terminal' && <TerminalSettings />}
                 {category === 'agent' && <MuxBaseCoreCategory groupKey="agent" title="Agent" sectionOrder={AGENT_SECTION_ORDER} />}
+                {category === 'team' && <TeamSettings />}
                 {category === 'worktree' && <MuxBaseCoreCategory groupKey="worktree" title="Worktree" />}
                 {category === 'marketplace' && <MarketplaceSettings />}
                 {category === 'window' && <WindowSettings />}

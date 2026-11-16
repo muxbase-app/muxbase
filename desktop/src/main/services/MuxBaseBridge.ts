@@ -5,7 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'os';
 import { basename, dirname, resolve } from 'path';
 import {
+  applyPerPaneOverride,
   atomicWriteJsonSync,
+  clearAgentStartupPrompt,
   clearConflictMergeTransactionById,
   conflictMergeTransactionFromMetadata,
   disposeManagedConflictResolutionPane,
@@ -21,8 +23,11 @@ import {
   getRunningAgentPanes,
   getStatusDetector,
   isAgentRunningInPane,
+  isShellCommand,
+  launchAgentInPane,
   listConflictMergeTransactions,
   markConflictMergeResolvedAfterVerification,
+  MUXBASE_PANE_ID_OPTION,
   LogService,
   normalizeAutomaticPaneTitle,
   parseMuxBaseConfig,
@@ -34,9 +39,13 @@ import {
   removeOpenCodeActivityPlugin,
   removePaneActivityJournal,
   removePiActivityExtension,
+  resolvePaneTerminalProfile,
   scanConflictMergeRecovery,
   startConflictMonitoring,
+  stampTmuxPaneIdOption,
+  stampTmuxPaneIncarnationOption,
   StateManager,
+  SettingsManager,
   shQuote,
   type ActionContext,
   type AgentCapability,
@@ -74,17 +83,30 @@ import type {
   WorktreeRemovalState,
   WorktreeRemoveResponse,
 } from '../../shared/ipc-types.js';
+import type {
+  TeamActionResponse,
+  TeamDecideRequest,
+  TeamFinishRequest,
+  TeamNoteRequest,
+  TeamPrepareMergeResponse,
+  TeamRun,
+  TeamStartRequest,
+  TeamStartResponse,
+} from '../../shared/team-types.js';
 import type { PaneTopics } from '../../shared/topic-types.js';
 import { formatError } from '../utils/formatError.js';
 import { getTranscriptDir, setupTmuxTranscript } from '../utils/tmux-transcript.js';
 import { ensureTmuxSession, publishSessionColorHint } from '../utils/tmuxSession.js';
 import { ActionCallbackRegistry } from './ActionCallbackRegistry.js';
 import { AgentCatalog } from './bridge/AgentCatalog.js';
-import { DuelWorkflow, type DuelRequest } from './bridge/DuelWorkflow.js';
+import { closePaneAndBranch, DuelWorkflow, type DuelRequest } from './bridge/DuelWorkflow.js';
 import { PaneActionWorkflow } from './bridge/PaneActionWorkflow.js';
 import { PaneLaunchWorkflow, type PaneLaunchOptions } from './bridge/PaneLaunchWorkflow.js';
 import { PaneSessionCatalog } from './bridge/PaneSessionCatalog.js';
 import { ReviewWorkflow } from './bridge/ReviewWorkflow.js';
+import { TeamWorkflow } from './bridge/TeamWorkflow.js';
+import { resolveTeamRecoveryPane, type TeamPaneBinding } from './bridge/teamPaneRecovery.js';
+import { showTeamAttentionNotification } from './team/teamAttentionNotifier.js';
 import { WorktreeWorkflow } from './bridge/WorktreeWorkflow.js';
 import { AgentSessionService, type HarvestedTitle } from './agent-session/AgentSessionService.js';
 import { AgentLivenessProbe } from './AgentLivenessProbe.js';
@@ -172,6 +194,7 @@ export class MuxBaseBridge {
   private untrackablePanes = new Set<string>();
   private readonly paneActivityProjection: PaneActivityProjection;
   private readonly duelWorkflow: DuelWorkflow;
+  private readonly teamWorkflow: TeamWorkflow;
   private readonly paneActionWorkflow: PaneActionWorkflow;
   private readonly paneLaunchWorkflow: PaneLaunchWorkflow;
   private readonly reviewWorkflow: ReviewWorkflow;
@@ -252,6 +275,55 @@ export class MuxBaseBridge {
       },
       setProgress: (action, active) => this.sendProgress(action, active),
     });
+    this.teamWorkflow = new TeamWorkflow({
+      clearStartupPrompt: async (paneId) => {
+        const pane = this.stateManager.getPaneById(paneId);
+        if (pane) await clearAgentStartupPrompt(pane.paneId);
+      },
+      closePane: (pane) => closePaneAndBranch(
+        pane,
+        this.buildActionContext(),
+        closePane,
+        () => this.reapOrphanedTranscripts(),
+      ),
+      createPane: (prompt, agent, options) => this.createPane(prompt, agent, options),
+      emitRun: (run) => this.sendTeamRun(run),
+      createDuelCandidate: (prompt, side, options) => this.duelWorkflow.createTeamCandidate(prompt, side, options),
+      getAvailableAgents: () => this.agentCatalog.getCached(),
+      getDefaults: () => ElectronSettingsService.getInstance().getAll(),
+      getEffectiveLaunchTuning: (agent, projectRoot) => {
+        const settings = SettingsManager.getInstance(projectRoot).getSettings();
+        const tuning = {
+          claude: { model: settings.claudeModel ?? '', effort: settings.claudeEffort ?? '' },
+          codex: { model: settings.codexModel ?? '', effort: settings.codexEffort ?? '' },
+          opencode: {
+            model: 'opencodeModel' in settings && typeof settings.opencodeModel === 'string' ? settings.opencodeModel : '',
+            effort: settings.opencodeVariant ?? '',
+          },
+          pi: { model: settings.piModel ?? '', effort: settings.piThinking ?? '' },
+        };
+        return tuning[agent];
+      },
+      getPane: (paneId) => this.stateManager.getPaneById(paneId),
+      getPaneActivity: (paneId) => this.paneActivityProjection.getPaneActivity(paneId),
+      getPanes: () => this.stateManager.getPanes(),
+      getProjectRoot: () => this.projectRoot,
+      getSession: (paneId) => this.agentSessionService?.getSession(paneId) ?? null,
+      hasActiveProjectContext: () => (
+        this.hasActiveProjectContext() && !this.switching && Boolean(this.paneActivityService)
+      ),
+      interruptPane: async (paneId) => {
+        const pane = this.stateManager.getPaneById(paneId);
+        if (pane) {
+          const key = pane.agent === 'codex' ? 'C-c' : 'Escape';
+          await this.tmuxService.sendTmuxKeys(pane.paneId, key);
+        }
+      },
+      notify: (message, run) => this.notifyTeam(message, run),
+      resumePane: (paneId) => this.restartTeamPane(paneId),
+      runProjectMutation: (action) => this.runProjectMutation(action),
+      sendPromptToPane: (paneId, prompt) => this.sendPromptToPane(paneId, prompt),
+    });
     this.paneActionWorkflow = new PaneActionWorkflow({
       addPaneToDone: (pane) => this.addPaneToDone(pane),
       buildActionContext: () => this.buildActionContext(),
@@ -261,6 +333,7 @@ export class MuxBaseBridge {
       getPaneCurrentCommand: (paneId) => this.tmuxService.getPaneCurrentCommand(paneId),
       getPanes: () => this.stateManager.getPanes(),
       getProjectRoot: () => this.projectRoot,
+      isTeamOwnedWriter: (pane) => this.teamWorkflow.isOwnedWriter(pane),
       paneExists: (paneId) => this.tmuxService.paneExists(paneId),
       persistPanesTransactionally: (panes) => {
         this.persistPanesToConfigOrThrow(panes);
@@ -550,6 +623,7 @@ export class MuxBaseBridge {
         signal: options.signal,
       });
       options.signal?.throwIfAborted();
+      this.teamWorkflow.start();
 
       log.info('bridge', 'MuxBaseBridge initialization complete');
     } catch (error) {
@@ -574,6 +648,7 @@ export class MuxBaseBridge {
   ): Promise<void> {
     const fresh = options.fresh === true;
     if (!fresh && newProjectRoot === this.projectRoot) return;
+    this.teamWorkflow.assertProjectSwitchAllowed();
     if (this.getActiveConflictMergeCount() > 0) {
       throw new Error(ACTIVE_CONFLICT_PROJECT_SWITCH_MESSAGE);
     }
@@ -618,6 +693,7 @@ export class MuxBaseBridge {
       // 5. Boot services (same flow as initialize)
       this.attachCorePaneCreationLogForwarder();
       await this.bootServices({ fresh });
+      this.teamWorkflow.start();
 
       this.notifyPaneListChanged();
       log.info('bridge', 'Project switch complete', {
@@ -1425,19 +1501,17 @@ export class MuxBaseBridge {
     }
   }
 
-  /** Submit a complete command without allowing terminal scroll/resize work to split it from Enter. */
+  /** Submit a complete command with terminal scroll and resize work held back until Enter lands. */
   async sendCommandToPane(paneId: string, command: string): Promise<void> {
     const pane = this.stateManager.getPanes().find((candidate) => candidate.id === paneId);
     if (!pane) throw new Error(`Unknown pane: ${paneId}`);
 
-    const submitted = await getTerminalManager(this).submitCommand(pane.id, pane.paneId, command);
+    const options = { isAgent: pane.agent !== undefined };
+    const submitted = await getTerminalManager(this).submitCommand(pane.id, pane.paneId, command, options);
     if (submitted) return;
 
-    // A pane can receive a command before its renderer terminal attaches. The
-    // shared helper keeps command text and its real Enter key consecutive in
-    // one tmux command list even on this unmanaged path.
     await this.cancelCopyModeBeforeCommand(pane.paneId);
-    await submitTerminalCommand(pane.paneId, command);
+    await submitTerminalCommand(pane.paneId, command, undefined, options);
   }
 
   private getTerminalTranscriptDir(): string | undefined {
@@ -1601,6 +1675,160 @@ export class MuxBaseBridge {
     return this.paneLaunchWorkflow.duplicate(paneId);
   }
 
+  private async restartTeamPane(paneId: string): Promise<TeamActionResponse> {
+    const original = this.stateManager.getPaneById(paneId);
+    const run = this.teamWorkflow.list().find((candidate) => (
+      candidate.members.some((member) => member.paneId === paneId)
+    ));
+    const member = run?.members.find((candidate) => candidate.paneId === paneId);
+    if (!run || !member) throw new Error('The pane is not owned by a recoverable team run');
+    await this.ensureValidControlPaneId();
+    const recovery = await resolveTeamRecoveryPane(original, member, run, {
+      listBindings: () => this.listTeamPaneBindings(),
+      recreatePane: (template) => this.resurrectDeadPane(template),
+    });
+    const pane = recovery.pane;
+    let persisted = false;
+    try {
+      await this.assertTeamPaneCanRestart(pane.paneId, member.agent);
+      if (this.stateManager.getPaneById(paneId)?.paneId !== original?.paneId) {
+        throw new Error('The pane changed while preparing recovery');
+      }
+      const settings = {
+        ...applyPerPaneOverride(
+          SettingsManager.getInstance(run.projectRoot).getSettings(),
+          member.agent,
+          member.model ?? pane.model,
+          member.effort ?? pane.effort,
+        ),
+        ...(member.agent === 'claude' ? { claudeFullscreenRendering: pane.claudeRenderer === 'fullscreen' } : {}),
+      };
+      const terminalProfile = resolvePaneTerminalProfile(member.agent, settings);
+      const restartedPane: MuxBasePane = {
+        ...pane,
+        ...terminalProfile,
+        agentSessionId: undefined,
+        effort: member.effort ?? pane.effort,
+        model: member.model ?? pane.model,
+        role: member.readOnly ? 'review' : undefined,
+        startedWithoutInitialPrompt: true,
+        teamRunId: run.id,
+      };
+      const panes = this.stateManager.getPanes().map((candidate) => (
+        candidate.id === paneId ? restartedPane : candidate
+      ));
+      if (!original) panes.push(restartedPane);
+      await stampTmuxPaneIdOption(pane.paneId, paneId);
+      this.persistPanesToConfigOrThrow(panes);
+      persisted = true;
+      this.stateManager.updatePanes(panes);
+      detachTerminalPane(paneId);
+      this.agentSessionService?.onPaneDestroyed(paneId);
+      getStatusDetector().removePane(paneId);
+      this.removePaneActivity(paneId);
+      const incarnationId = await stampTmuxPaneIncarnationOption(pane.paneId);
+      await this.registerPaneActivity([restartedPane], true);
+      this.notifyPaneListChanged();
+      await launchAgentInPane({
+        activityIncarnationId: incarnationId,
+        activityJournal: getPaneActivityJournalPath(incarnationId),
+        agent: member.agent,
+        agentPrompt: '',
+        cwd: member.worktreePath,
+        enableActivityAdapters: this.areAgentLifecycleAdaptersEnabled(),
+        muxbasePaneId: paneId,
+        otlpEndpoint: this.getOtlpEndpoint(),
+        paneId: pane.paneId,
+        projectRoot: run.projectRoot,
+        promptMode: 'argument',
+        readOnly: member.readOnly,
+        settings,
+        slug: pane.slug,
+        terminalProfile,
+        tmuxService: this.tmuxService,
+      });
+      await this.paneMonitor?.start(this.stateManager.getPanes());
+      await this.agentSessionService?.onPaneCreated(restartedPane);
+      return { success: true };
+    } catch (error) {
+      if (recovery.created && !persisted) return this.rollbackTeamPaneRecovery(pane.paneId, error);
+      throw error;
+    }
+  }
+
+  private async assertTeamPaneCanRestart(tmuxPaneId: string, agent: AgentName): Promise<void> {
+    const livePanes = await this.tmuxService.listAllPanes();
+    if (!livePanes) throw new Error('Unable to verify team process liveness');
+    const live = livePanes.find((candidate) => candidate.paneId === tmuxPaneId);
+    if (!live) throw new Error('The team pane disappeared during recovery');
+    const processes = await getRunningAgentPanes([{
+      agent,
+      currentCommand: live.currentCommand,
+      paneId: tmuxPaneId,
+      pid: live.pid,
+    }]);
+    if (processes.indeterminate.has(tmuxPaneId)) throw new Error('Team agent liveness is indeterminate');
+    if (processes.running.has(tmuxPaneId)) {
+      throw new Error('The agent is still running; stop it before retrying');
+    }
+    const currentCommand = await this.tmuxService.getPaneCurrentCommand(tmuxPaneId);
+    if (!currentCommand || !isShellCommand(currentCommand)) {
+      throw new Error('The pane is not at a shell prompt; refusing to replace its process');
+    }
+  }
+
+  private async rollbackTeamPaneRecovery(tmuxPaneId: string, failure: unknown): Promise<never> {
+    try {
+      await this.tmuxService.killPane(tmuxPaneId);
+    } catch (cleanupError) {
+      throw new Error(`${formatError(failure)}. Recovery cleanup failed: ${formatError(cleanupError)}`);
+    }
+    throw failure;
+  }
+
+  private async listTeamPaneBindings(): Promise<TeamPaneBinding[]> {
+    const format = `#{pane_id}\t#{pane_current_path}\t#{${MUXBASE_PANE_ID_OPTION}}`;
+    const output = await execAsync(
+      `tmux list-panes -s -t ${shQuote(this.sessionName)} -F ${shQuote(format)}`,
+      { silent: true },
+    );
+    return output.split('\n').filter(Boolean).map((line) => {
+      const [paneId, cwd, logicalPaneId = ''] = line.split('\t');
+      if (!paneId || !cwd) throw new Error('tmux returned an incomplete team pane binding');
+      return { cwd, logicalPaneId, paneId };
+    });
+  }
+
+  listTeamRuns(): TeamRun[] {
+    return this.teamWorkflow.list();
+  }
+
+  startTeamRun(request: TeamStartRequest): Promise<TeamStartResponse> {
+    return this.teamWorkflow.startRun(request);
+  }
+
+  decideTeamRun(request: TeamDecideRequest): Promise<TeamActionResponse> {
+    return this.teamWorkflow.decide(request);
+  }
+
+  addTeamNote(request: TeamNoteRequest): TeamActionResponse {
+    return this.teamWorkflow.note(request);
+  }
+
+  prepareTeamMerge(runId: string): Promise<TeamPrepareMergeResponse> {
+    return this.teamWorkflow.prepareMerge(runId);
+  }
+
+  finishTeamRun(request: TeamFinishRequest): Promise<TeamActionResponse> {
+    return this.teamWorkflow.finish(request);
+  }
+
+  private sendTeamRun(run: TeamRun): void {
+    if (run.projectRoot === this.projectRoot && this.window && !this.window.isDestroyed()) {
+      this.window.webContents.send(IPC_EVENT.TEAM_RUN_CHANGED, run);
+    }
+  }
+
   async startReviewAction(sourcePaneId: string, reviewAgent?: AgentName): Promise<PaneStartReviewResponse> {
     return this.reviewWorkflow.startReview(sourcePaneId, reviewAgent);
   }
@@ -1702,6 +1930,12 @@ export class MuxBaseBridge {
       otlpEndpoint: this.getOtlpEndpoint(),
       terminalTranscriptDir: this.getTerminalTranscriptDir(),
       skipLastPaneWelcome: true,
+      isTeamOwnedWriter: (pane) => this.teamWorkflow.isOwnedWriter(pane),
+      onTeamMergeSuccess: (pane) => this.teamWorkflow.completePaneMerge(pane),
+      onTeamMergeHookStart: (pane) => this.teamWorkflow.beginMergeHook(pane),
+      onTeamMergeHookComplete: (pane, error) => this.teamWorkflow.completeMergeHook(pane, error),
+      prepareTeamMerge: (pane, targetPath, revision) => this.teamWorkflow.beginPaneMerge(pane, targetPath, revision),
+      validateMerge: (pane, worktreePath, sourceRevision) => this.teamWorkflow.validatePaneMerge(pane, worktreePath, sourceRevision),
       savePanes: async (panes: MuxBasePane[]) => {
         // Action workflows use persistence as a transaction boundary. Write
         // first so an I/O failure cannot expose a pane in memory or notify the
@@ -2038,9 +2272,16 @@ export class MuxBaseBridge {
     }
   }
 
-  sendToast(message: string, severity: 'success' | 'error' | 'info' | 'warning'): void {
+  private notifyTeam(message: string, run?: TeamRun): void {
+    const severity = run?.status === 'ready' ? 'success' : 'warning';
+    const identity = run ? { projectRoot: run.projectRoot, runId: run.id } : undefined;
+    this.sendToast(message, severity, identity);
+    if (run) showTeamAttentionNotification(this.window, message, () => this.sendToast(message, severity, identity));
+  }
+
+  sendToast(message: string, severity: 'success' | 'error' | 'info' | 'warning', teamReady?: { projectRoot: string; runId: string }): void {
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(IPC_EVENT.TOAST, { message, severity });
+      this.window.webContents.send(IPC_EVENT.TOAST, { message, severity, ...(teamReady ? { teamReady } : {}) });
     }
   }
 
@@ -2070,6 +2311,7 @@ export class MuxBaseBridge {
 
   async shutdown(): Promise<void> {
     log.info('bridge', 'Shutting down MuxBaseBridge...');
+    await this.teamWorkflow.stop();
     await this.teardownProjectServices();
     this.worktreeMutationPaths.clear();
     this.untrackablePanes.clear();

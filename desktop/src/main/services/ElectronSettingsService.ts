@@ -1,6 +1,7 @@
 import Store from 'electron-store';
 import type { ElectronSettings } from '../../shared/ipc-types.js';
 import { SIDEBAR_DEFAULT_WIDTH } from '../../shared/sidebar-metrics.js';
+import { DEFAULT_TEAM_SETTINGS } from '../../shared/team-settings.js';
 import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -10,6 +11,7 @@ import {
   LEGACY_SF_MONO_TERMINAL_FONT_FAMILY,
   SYSTEM_MONO_TERMINAL_FONT_FAMILY,
 } from '../../shared/terminal-profile.js';
+import { teamSettingsSchema } from './team/teamSettingsValidation.js';
 
 const LEGACY_TERMINAL_FONT_FAMILIES = new Set([
   JETBRAINS_TERMINAL_FONT_FAMILY,
@@ -39,6 +41,7 @@ const MIGRATION_VERSION_KEYS = [
 ] as const;
 
 const DEFAULTS: ElectronSettings = {
+  ...DEFAULT_TEAM_SETTINGS,
   theme: 'dark',
   terminalFontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
   terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
@@ -67,7 +70,7 @@ const DEFAULTS: ElectronSettings = {
   enableTelemetryCostTracking: true,
   costCurrency: 'EUR-hai',
   enableConversationTopics: false,
-  enableAgentLifecycleAdapters: false,
+  enableAgentLifecycleAdapters: true,
   enableReviewAgent: true,
   enableLanguageIntelligence: true,
   pollingInterval: 200,
@@ -116,7 +119,9 @@ export class ElectronSettingsService {
     const terminalOsc52Clipboard = storedSettings.terminalOsc52Clipboard === 'ask'
       ? DEFAULTS.terminalOsc52Clipboard
       : storedSettings.terminalOsc52Clipboard ?? DEFAULTS.terminalOsc52Clipboard;
-    return { ...DEFAULTS, ...storedSettings, terminalOsc52Clipboard };
+    const result = { ...DEFAULTS, ...storedSettings, terminalOsc52Clipboard };
+    const teamSettings = teamSettingsSchema.parse(result);
+    return { ...result, teamCouncilRoles: teamSettings.teamCouncilRoles };
   }
 
   get<K extends keyof ElectronSettings>(key: K): ElectronSettings[K] {
@@ -124,7 +129,8 @@ export class ElectronSettingsService {
   }
 
   update<K extends keyof ElectronSettings>(key: K, value: ElectronSettings[K]): ElectronSettings {
-    this.store.set(key, value);
+    teamSettingsSchema.parse({ ...this.getAll(), [key]: value });
+    this.store.set(key, structuredClone(value));
     return this.getAll();
   }
 
@@ -139,7 +145,7 @@ export class ElectronSettingsService {
   }
 
   static getDefaults(): ElectronSettings {
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, teamCouncilRoles: [...DEFAULTS.teamCouncilRoles] };
   }
 
   private resetKanbanDefaultIfNeeded(): void {

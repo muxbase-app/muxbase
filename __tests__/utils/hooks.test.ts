@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildHookEnvironment, findHook, initializeHooksDirectory, triggerHookSync } from '../../src/utils/hooks.js';
+import { buildHookEnvironment, findHook, initializeHooksDirectory, triggerHookSync, triggerHookWithResult } from '../../src/utils/hooks.js';
 
 describe('hooks initialization', () => {
   const roots: string[] = [];
@@ -124,5 +124,19 @@ describe('hooks initialization', () => {
       success: true,
       output: 'ok',
     });
+  });
+
+  it('awaits nonblocking hook completion and reports failure rather than reporting a launched process as success', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'muxbase-hooks-result-'));
+    roots.push(projectRoot);
+    const hookPath = join(projectRoot, '.muxbase-hooks', 'post_merge');
+    mkdirSync(join(projectRoot, '.muxbase-hooks'), { recursive: true });
+    writeFileSync(hookPath, '#!/bin/sh\nprintf failed\nexit 7\n');
+    chmodSync(hookPath, 0o755);
+
+    const result = await triggerHookWithResult('post_merge', projectRoot);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('7');
   });
 });

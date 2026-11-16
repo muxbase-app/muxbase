@@ -62,7 +62,7 @@ function focusInitialTarget(panel: HTMLElement | null, preferred: HTMLElement | 
   target.focus();
 }
 
-function wrapTabFocus(panel: HTMLElement, event: KeyboardEvent): void {
+export function wrapTabFocus(panel: HTMLElement, event: KeyboardEvent): void {
   const tabbables = tabbablesIn(panel);
   if (tabbables.length === 0) {
     event.preventDefault();
@@ -70,7 +70,7 @@ function wrapTabFocus(panel: HTMLElement, event: KeyboardEvent): void {
     return;
   }
   const active = document.activeElement;
-  const inside = active instanceof HTMLElement && panel.contains(active);
+  const inside = active instanceof HTMLElement && panel.contains(active) && active !== panel;
   const edge = event.shiftKey ? tabbables[0] : tabbables[tabbables.length - 1];
   if (inside && active !== edge) return;
   event.preventDefault();

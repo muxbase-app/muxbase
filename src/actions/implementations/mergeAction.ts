@@ -28,12 +28,22 @@ import {
   handleWorktreeUncommitted,
   handleMergeConflict,
 } from '../merge/issueHandlers/index.js';
+import { getMergeSafetyError } from '../merge/mergeSafety.js';
+import { reservePaneMerge } from '../merge/paneMergeReservation.js';
 
 /**
  * Merge a worktree into the main branch with comprehensive pre-checks.
  * Supports multi-merge: if sub-worktrees exist, merges all of them sequentially.
  */
 export async function mergePane(
+  pane: MuxBasePane,
+  context: ActionContext,
+  params?: { mainBranch?: string },
+): Promise<ActionResult> {
+  return reservePaneMerge(pane, () => startPaneMerge(pane, context, params));
+}
+
+async function startPaneMerge(
   pane: MuxBasePane,
   context: ActionContext,
   _params?: { mainBranch?: string }
@@ -54,6 +64,9 @@ export async function mergePane(
       dismissable: true,
     };
   }
+
+  const safetyError = await getMergeSafetyError(pane, context);
+  if (safetyError) return { type: 'error', message: safetyError, dismissable: true };
 
   const mergeState = await inspectConflictMergeState(pane.worktreePath);
   if (mergeState.status === 'conflicted' || mergeState.mergeHead || mergeState.unmergedFiles.length > 0) {

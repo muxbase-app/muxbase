@@ -3,6 +3,9 @@ import { validatePaneName } from 'muxbase/pane-name';
 import { z } from 'zod';
 import { IPC } from '../../shared/ipc-channels.js';
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from '../../shared/sidebar-metrics.js';
+import { TEAM_MODES } from '../../shared/team-settings.js';
+import { TEAM_ROLE_IDS } from '../../shared/team-types.js';
+import { teamSettingsSchema } from '../services/team/teamSettingsValidation.js';
 
 type IpcChannel = (typeof IPC)[keyof typeof IPC];
 type IpcArgsSchema = z.ZodType<unknown>;
@@ -44,11 +47,17 @@ const duelSideSchema = z.object({
   effort: effortSchema.optional(),
 }).strict();
 
+const teamRunLimitsSchema = z.object({
+  maxDurationMs: z.number().finite().int().positive().max(Number.MAX_SAFE_INTEGER),
+  maxTokens: z.number().finite().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+
 function duelSideKey(side: z.infer<typeof duelSideSchema>): string {
   return `${side.agent}|${side.model ?? ''}|${side.effort ?? ''}`;
 }
 
 const electronSettingValueSchemas = {
+  ...teamSettingsSchema.shape,
   theme: themeSchema,
   terminalFontFamily: z.string(),
   terminalFontSize: z.number().int().min(8).max(24),
@@ -254,6 +263,40 @@ const ipcRequestSchemas = {
   }).strict()),
   [IPC.PANE_DUEL_RESOLVE]: oneArg(z.object({
     winnerPaneId: stringValue.min(1),
+  }).strict()),
+  [IPC.TEAM_LIST]: noArgs,
+  [IPC.TEAM_START]: oneArg(z.object({
+    brief: stringValue.trim().min(1).max(20_000),
+    checkCommand: stringValue.max(500).optional(),
+    duelSides: z.tuple([duelSideSchema, duelSideSchema]).refine(
+      ([a, b]) => duelSideKey(a) !== duelSideKey(b),
+      { message: 'Duel sides must differ in agent, model, or effort' },
+    ).optional(),
+    limits: teamRunLimitsSchema.optional(),
+    maxFixRounds: z.number().int().min(1).max(5).optional(),
+    members: z.array(z.object({
+      agent: agentSchema,
+      domain: stringValue.max(80).optional(),
+      role: z.enum(TEAM_ROLE_IDS),
+    }).strict()).min(2).max(TEAM_ROLE_IDS.length).optional(),
+    mode: z.enum(TEAM_MODES).optional(),
+    policy: z.enum(['every-gate', 'when-stuck']).optional(),
+  }).strict()),
+  [IPC.TEAM_DECIDE]: oneArg(z.object({
+    decisionId: stringValue.min(1),
+    extension: teamRunLimitsSchema.optional(),
+    note: stringValue.max(4000).optional(),
+    optionId: stringValue.min(1),
+    runId: stringValue.min(1),
+  }).strict()),
+  [IPC.TEAM_NOTE]: oneArg(z.object({
+    runId: stringValue.min(1),
+    text: stringValue.trim().min(1).max(4000),
+  }).strict()),
+  [IPC.TEAM_PREPARE_MERGE]: oneArg(z.object({ runId: stringValue.min(1) }).strict()),
+  [IPC.TEAM_FINISH]: oneArg(z.object({
+    outcome: z.enum(['merged', 'stopped']),
+    runId: stringValue.min(1),
   }).strict()),
   [IPC.ACTION_CALLBACK]: oneArg(z.object({
     callbackId: stringValue,

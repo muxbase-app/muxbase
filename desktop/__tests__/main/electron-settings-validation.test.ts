@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { IPC } from '../../src/shared/ipc-channels';
 import type { ElectronSettings } from '../../src/shared/ipc-types';
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from '../../src/shared/sidebar-metrics';
+import { DEFAULT_TEAM_SETTINGS } from '../../src/shared/team-settings.js';
 import { electronSettingKeys, validateIpcInvokeArgs } from '../../src/main/ipc/ipc-request-validation';
 
 const SAMPLE_VALUES: Record<keyof ElectronSettings, unknown> = {
+  ...DEFAULT_TEAM_SETTINGS,
   alwaysOnTop: false,
   compactMode: false,
   copyOnSelect: false,

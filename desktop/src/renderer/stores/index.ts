@@ -41,6 +41,7 @@ import { usePaneActivityStore as _paneActivityStore } from './pane-activity.stor
 import { useAgentSessionStore as _agentSessionStore } from './agent-session.store';
 import { useConflictResolutionStore as _conflictResolutionStore } from './conflict-resolution.store';
 import { useTerminalStore as _terminalStore } from './terminal.store';
+import { useTeamStore as _teamStore } from './team.store';
 import { useUpdateStore as _updateStore } from './update.store';
 const rendererEnv = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
 const e2eFlag = typeof window !== 'undefined' && (window as unknown as Record<string, unknown>).__MUXBASE_E2E === true;
@@ -52,6 +53,7 @@ if (typeof window !== 'undefined' && (rendererEnv?.DEV || e2eFlag)) {
     agentSession: _agentSessionStore,
     conflictResolution: _conflictResolutionStore,
     terminal: _terminalStore,
+    team: _teamStore,
     update: _updateStore,
   };
 }

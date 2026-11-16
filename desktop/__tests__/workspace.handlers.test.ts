@@ -38,6 +38,8 @@ vi.mock('../src/main/services/ProjectDiscovery.js', () => ({
 }));
 
 vi.mock('muxbase/core', () => ({
+  AGENT_IDS: ['claude', 'codex', 'opencode', 'pi'],
+  agentHasCapability: (agent: string, capability: string) => agent !== 'pi' || capability !== 'review',
   execAsync: vi.fn(async () => ''),
   getProjectConfigPath: (projectRoot: string) => `${projectRoot}/.muxbase/muxbase.config.json`,
   shQuote: (s: string) => s,

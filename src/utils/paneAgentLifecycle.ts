@@ -1,11 +1,11 @@
 import { LogService } from '../services/LogService.js';
 import { TmuxService } from '../services/TmuxService.js';
 import type { MuxBasePane, MuxBaseSettings } from '../types.js';
-import { assertNever, type AgentName } from '../agents/agent-contract.js';
+import { agentHasCapability, assertNever, type AgentName } from '../agents/agent-contract.js';
 import { buildPiResumeCommand } from '../agents/pi-runtime.js';
 import { isShellCommand } from './agentCommandDetection.js';
 import { findPiCommand } from './agentDetection.js';
-import { getOpencodeTuiCommand, getPermissionFlags } from './agentLaunch.js';
+import { getOpencodeTuiCommand, getPermissionFlags, getReadOnlyFlags } from './agentLaunch.js';
 import { ensureClaudeSessionHookSettings } from './claudeSessionRegistry.js';
 import { prepareActivityAdapter } from './activityAdapters.js';
 import { ensureTmuxPaneIncarnationOption } from './paneRebinding.js';
@@ -42,10 +42,15 @@ export async function resumeAgentInPane(
     enableActivityAdapters?: boolean;
     piSessionMode?: 'fork' | 'resume';
     piSessionPath?: string;
+    readOnly?: boolean;
   } = {},
 ): Promise<boolean> {
   const tmuxService = TmuxService.getInstance();
   const log = LogService.getInstance();
+
+  if (options.readOnly && !agentHasCapability(agent, 'review')) {
+    throw new Error(`${agent} does not support read-only review sessions`);
+  }
 
   if (agent === 'claude' && claudeRenderer === 'fullscreen') {
     await assertClaudeFullscreenSupported();
@@ -59,7 +64,9 @@ export async function resumeAgentInPane(
 
   const activityAdapter = await prepareActivityAdapter(agent, options.enableActivityAdapters === true || agent === 'claude');
 
-  const permissionFlags = getPermissionFlags(agent, settings.permissionMode);
+  const permissionFlags = options.readOnly
+    ? getReadOnlyFlags(agent)
+    : getPermissionFlags(agent, settings.permissionMode);
   const permissionSuffix = permissionFlags ? ` ${permissionFlags}` : '';
 
   let command: string;

@@ -93,24 +93,24 @@ const ptyOsc52FollowerSpies = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/main/services/terminal-transcript-stream.js', () => ({
-  TerminalTranscriptStream: vi.fn().mockImplementation(() => transcriptStreamSpies),
+  TerminalTranscriptStream: vi.fn().mockImplementation(function () { return transcriptStreamSpies; }),
 }));
 
 vi.mock('../../src/main/services/tmux-control-mode.js', () => ({
-  TmuxControlModeClient: vi.fn().mockImplementation(() => ({
+  TmuxControlModeClient: vi.fn().mockImplementation(function () { return ({
     ensureStarted: vi.fn().mockResolvedValue(undefined),
     subscribePane: vi.fn(),
     stop: vi.fn(),
     sendCommand: vi.fn(),
-  })),
+  }); }),
 }));
 
 vi.mock('../../src/main/services/terminal-pty-service.js', () => ({
-  TerminalPtyService: vi.fn().mockImplementation(() => ptyServiceSpies),
+  TerminalPtyService: vi.fn().mockImplementation(function () { return ptyServiceSpies; }),
 }));
 
 vi.mock('../../src/main/services/terminal-pty-osc52-follower.js', () => ({
-  TerminalPtyOsc52Follower: vi.fn().mockImplementation(() => ptyOsc52FollowerSpies),
+  TerminalPtyOsc52Follower: vi.fn().mockImplementation(function () { return ptyOsc52FollowerSpies; }),
 }));
 
 vi.mock('fs', () => ({
@@ -1713,7 +1713,7 @@ describe('TerminalManager', () => {
     expect(execAsync).toHaveBeenCalledWith("tmux copy-mode -q -t '%1'", { timeout: 1500 });
     expect(handle.write).not.toHaveBeenCalled();
     expect(submitTerminalCommand).toHaveBeenCalledOnce();
-    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'printf ready');
+    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'printf ready', undefined, {});
     expect(events).toEqual(['copy-mode-cancelled', 'command-submitted']);
 
     manager.destroyAll();
@@ -1754,7 +1754,7 @@ describe('TerminalManager', () => {
 
     expect(execAsync).toHaveBeenCalledWith("tmux copy-mode -q -t '%1'", { timeout: 1500 });
     expect(submitTerminalCommand).toHaveBeenCalledOnce();
-    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo classic');
+    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo classic', undefined, {});
 
     manager.destroyAll();
   });
@@ -1771,7 +1771,7 @@ describe('TerminalManager', () => {
     vi.mocked(submitTerminalCommand).mockImplementation(async () => submissionGate.promise);
 
     const submission = manager.submitCommand('p1', '%1', 'echo ordered');
-    await vi.waitFor(() => expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo ordered'));
+    await vi.waitFor(() => expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo ordered', undefined, {}));
     const typing = manager.write('p1', 'x');
     const resize = manager.resize('p1', 100, 30);
     await Promise.resolve();
@@ -2111,7 +2111,7 @@ describe('TerminalManager', () => {
     manager.unlockStdin('p1');
     await manager.submitCommand('p1', '%1', 'echo replacement');
     expect(replacementHandle.write).not.toHaveBeenCalled();
-    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo replacement');
+    expect(submitTerminalCommand).toHaveBeenCalledWith('%1', 'echo replacement', undefined, {});
     // Command submission performs its own authoritative cancellation even
     // when the local copy-mode tracker believes the pane is already live.
     expect(staleCleanupCalls()).toHaveLength(3);

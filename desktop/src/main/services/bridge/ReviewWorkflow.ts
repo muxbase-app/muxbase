@@ -128,7 +128,7 @@ function sweepStaleFindings(reviewDirectory: string): void {
   }
 }
 
-function writeMuxBaseFile(absolutePath: string, content: string): void {
+export function writeMuxBaseFile(absolutePath: string, content: string): void {
   mkdirSync(dirname(absolutePath), { recursive: true, mode: 0o700 });
   writeFileSync(absolutePath, content, { encoding: 'utf-8', mode: 0o600 });
 }

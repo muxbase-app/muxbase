@@ -72,12 +72,12 @@ describe('useCommandPalette theme command', () => {
     vi.clearAllMocks();
   });
 
-  it('persists command palette theme changes to Electron settings', () => {
+  it('persists command palette theme changes to Electron settings', async () => {
     // Arrange
     const { result } = renderHook(() => useCommandPalette());
 
     // Act
-    act(() => result.current.executeCommand('toggle-theme'));
+    await act(async () => result.current.executeCommand('toggle-theme'));
 
     // Assert
     expect(useUiStore.getState().theme).toBe('light');

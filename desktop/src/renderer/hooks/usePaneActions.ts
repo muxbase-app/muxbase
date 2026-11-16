@@ -180,7 +180,7 @@ export function usePaneActions() {
   );
 
   const mergePane = useCallback(
-    async (paneId: string) => {
+    async (paneId: string): Promise<SerializableActionResult> => {
       try {
         const initialResult = await paneApi.mergePane({ paneId });
         const result = await resolveMergeActionFlow(initialResult);
@@ -188,13 +188,13 @@ export function usePaneActions() {
         if (result.type === 'choice' && result.title === MERGE_CONFLICTS_TITLE) {
           useConflictResolutionStore.getState().openConflictResolution(paneId, result);
           useUiStore.getState().openConflictView();
-          return;
+          return result;
         }
 
         if (result.type === 'error') {
           const { title, detail } = humanizeMergeError(result.message);
           addToast(result.message, 'error', { title, detail });
-          return;
+          return result;
         }
 
         addToast(result.message, getActionToastSeverity(result));
@@ -204,10 +204,12 @@ export function usePaneActions() {
             'warning',
           );
         }
+        return result;
       } catch (err) {
-        const raw = (err as Error).message;
+        const raw = err instanceof Error ? err.message : String(err);
         const { title, detail } = humanizeMergeError(raw);
         addToast(raw, 'error', { title, detail });
+        return { message: raw, type: 'error' };
       }
     },
     [addToast],

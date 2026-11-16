@@ -5,8 +5,8 @@ import { clampSidebarWidth } from '../lib/constants';
 
 export type Theme = 'dark' | 'light' | 'colorful' | 'dark-colorful' | 'system';
 export type ActiveView = 'dashboard' | 'settings' | 'topics';
-export type ViewMode = 'fleet' | 'focus' | 'kanban' | 'summary' | 'conflict-resolution' | 'duel';
-export type SettingsCategory = 'appearance' | 'terminal' | 'agent' | 'worktree' | 'marketplace' | 'window' | 'shortcuts' | 'advanced' | 'about';
+export type ViewMode = 'fleet' | 'focus' | 'kanban' | 'summary' | 'conflict-resolution' | 'duel' | 'team';
+export type SettingsCategory = 'appearance' | 'terminal' | 'agent' | 'team' | 'worktree' | 'marketplace' | 'window' | 'shortcuts' | 'advanced' | 'about';
 
 interface UiState {
   theme: Theme;

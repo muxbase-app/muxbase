@@ -167,6 +167,19 @@ describe('multi-merge conflict pane lifecycle', () => {
     });
   });
 
+  it('revalidates certification before a resolved conflict changes the target repository', async () => {
+    const context = makeContext();
+    context.validateMerge = vi.fn().mockResolvedValue(null);
+    await selectAiMerge(context);
+    const lifecycle = vi.mocked(launchManagedConflictResolutionPane).mock.calls[0]?.[0];
+    vi.mocked(context.validateMerge).mockResolvedValue('The resolved tree needs review');
+
+    await lifecycle.onResolved(conflictPane);
+
+    expect(mergeWorktreeIntoMainMock).not.toHaveBeenCalled();
+    expect(killPaneMock).not.toHaveBeenCalled();
+  });
+
   it('returns an error after shared lifecycle rollback fails setup', async () => {
     vi.mocked(launchManagedConflictResolutionPane).mockRejectedValueOnce(
       new Error('save failed; resources rolled back'),
@@ -190,7 +203,7 @@ describe('multi-merge conflict pane lifecycle', () => {
 
     expect(killPaneMock).toHaveBeenCalledWith('%9');
     expect(context.savePanes).toHaveBeenCalledWith([sourcePane]);
-    expect(mergeWorktreeIntoMainMock).toHaveBeenCalledWith('/workspace/main-project/packages/nested', 'nested-feature');
+    expect(mergeWorktreeIntoMainMock).toHaveBeenCalledWith('/workspace/main-project/packages/nested', 'nested-feature', expect.any(Function));
     expect(triggerHookMock).toHaveBeenCalledTimes(1);
     expect(context.onActionResult).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining('Completed: 1'),

@@ -31,7 +31,16 @@ export default defineConfig({
     define: {
       'process.env.MUXBASE_BUILD_CRASH_REPORT_URL': JSON.stringify(buildCrashReportUrl),
     },
-    plugins: [externalizeMuxBase()],
+    plugins: [externalizeMuxBase(), {
+      name: 'team-check-owner',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'teamCheckOwner.mjs',
+          source: readFileSync(resolve(__dirname, 'src/main/services/team/teamCheckOwner.mjs'), 'utf8'),
+        });
+      },
+    }],
     build: {
       rollupOptions: {
         input: {

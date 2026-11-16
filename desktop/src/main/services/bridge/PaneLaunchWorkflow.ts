@@ -34,6 +34,7 @@ export interface PaneLaunchOptions {
   slugBase?: string;
   slugSuffix?: string;
   sourceBacklogId?: string;
+  teamRunId?: string;
   useWorktree?: boolean;
   worktreeSeedFile?: { content: string; relativePath: string };
   worktreeStartPoint?: string;
@@ -237,6 +238,7 @@ export class PaneLaunchWorkflow {
         skipHooks: true,
         slugBase: options?.slugBase,
         slugSuffix: options?.slugSuffix,
+        teamRunId: options?.teamRunId,
         terminalTranscriptDir: this.dependencies.getTerminalTranscriptDir(),
         useWorktree,
         worktreeSeedFile: options?.worktreeSeedFile,

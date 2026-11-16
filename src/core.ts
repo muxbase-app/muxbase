@@ -22,7 +22,8 @@ export type {
 } from './types.js';
 
 // Pane Creation
-export { createPane, createWorktreeForPane, resumeAgentInPane, isAgentRunningInPane } from './utils/paneCreation.js';
+export { applyPerPaneOverride, createPane, createWorktreeForPane, resumeAgentInPane, isAgentRunningInPane } from './utils/paneCreation.js';
+export { launchAgentInPane } from './utils/paneAgentLaunch.js';
 export { getPaneActivityJournalPath, removePaneActivityJournal } from './utils/paneActivityJournal.js';
 export { ACTIVITY_ADAPTERS, getActivityAdapter } from './utils/activityAdapters.js';
 export type {
@@ -107,6 +108,11 @@ export {
 } from './actions/merge/conflictPaneOwnership.js';
 
 // Git Utilities
+export {
+  assertTeamPublicationSupport,
+  hasCertifiedPublicationReceipt,
+  recoverCertifiedPublication,
+} from './utils/certifiedPublication.js';
 export {
   getMainBranchAsync,
   getMainBranch,
@@ -357,3 +363,4 @@ export type {
   SkillEntry,
   TranslationResult,
 } from './services/marketplace/index.js';
+export { clearAgentStartupPrompt } from './utils/autoApproveTrustPrompt.js';

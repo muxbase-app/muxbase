@@ -6,6 +6,7 @@ import { useSidebarSession } from '../../hooks/useSidebarSession';
 import { cn } from '../../lib/cn';
 import { isConversationTopicsEnabled } from '../../lib/feature-flags';
 import { useElectronSettingsStore, useFileBrowserStore, useHiddenPanesStore, useNotificationStore, usePaneStore, useProjectStore, useUiStore, useWorkspacePickerStore } from '../../stores';
+import { openDecisionCount, useTeamStore } from '../../stores/team.store';
 import { HoverTooltip } from '../shared/HoverTooltip';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { SidebarAgentList } from './SidebarAgentList';
@@ -52,6 +53,8 @@ export function Sidebar({ forceExpanded = false }: Readonly<SidebarProps>) {
   const collapsed = !forceExpanded && sidebarCollapsed;
   const focusPane = useUiStore((s) => s.focusPane);
   const viewMode = useUiStore((s) => s.viewMode);
+  const setViewMode = useUiStore((s) => s.setViewMode);
+  const teamNeedsYou = useTeamStore((s) => openDecisionCount(s.runs));
   const hiddenPaneIds = useHiddenPanesStore((s) => s.hiddenPaneIds);
   const electronSettings = useElectronSettingsStore((s) => s.settings);
   const conversationTopicsEnabled = isConversationTopicsEnabled(electronSettings);
@@ -98,16 +101,23 @@ export function Sidebar({ forceExpanded = false }: Readonly<SidebarProps>) {
       addToast(error instanceof Error ? error.message : 'Failed to switch projects', 'error');
     }
   }, [addToast, switchProject]);
+  const handleOpenTeam = useCallback(() => {
+    setActiveView('dashboard');
+    setViewMode('team');
+  }, [setActiveView, setViewMode]);
   const sidebarActions = resolveSidebarActions(createSidebarActionContext({
     activeView,
     conversationTopicsEnabled,
     createShellPane: handleCreateShell,
     fileBrowserOpen,
     openSettings,
+    openTeam: handleOpenTeam,
     openWorkspacePicker,
     settingsCategory,
     setActiveView,
+    teamNeedsYou,
     toggleFileBrowser,
+    viewMode,
   }));
   const navActions = sidebarActions.filter(
     (action) => action.id !== SETTINGS_ACTION_ID && action.id !== MARKETPLACE_ACTION_ID,

@@ -23,6 +23,12 @@ describe('Build output', () => {
     expect(existsSync(resolve(OUT, 'main/index.js'))).toBe(true);
   });
 
+  it('ships the standalone owned-check supervisor beside the main entry', () => {
+    const worker = readFileSync(resolve(OUT, 'main/teamCheckOwner.mjs'), 'utf8');
+    expect(worker).toBe(readFileSync(resolve(ROOT, 'src/main/services/team/teamCheckOwner.mjs'), 'utf8'));
+    expect(readFileSync(resolve(OUT, 'main/index.js'), 'utf8')).toContain('teamCheckOwner.mjs');
+  });
+
   it('preload/index.js exists', () => {
     expect(existsSync(resolve(OUT, 'preload/index.js'))).toBe(true);
   });

@@ -60,6 +60,7 @@ function makeHarness(initialPanes: MuxBasePane[] = [makePane()]) {
     getPaneCurrentCommand: vi.fn(async () => 'zsh'),
     getPanes: vi.fn(() => panes),
     getProjectRoot: vi.fn(() => '/project'),
+    isTeamOwnedWriter: vi.fn((pane: MuxBasePane) => Boolean(pane.teamRunId)),
     paneExists: vi.fn(async () => true),
     persistPanesTransactionally: vi.fn((next: MuxBasePane[]) => { panes = next; }),
     reapOrphanedTranscripts: vi.fn(async () => undefined),
@@ -110,6 +111,26 @@ describe('PaneActionWorkflow', () => {
     expect(harness.dependencies.reapOrphanedTranscripts).not.toHaveBeenCalled();
     await result.onSelect?.('kill_clean_branch');
     expect(harness.dependencies.reapOrphanedTranscripts).toHaveBeenCalledOnce();
+  });
+
+  it('refuses ordinary close for an active Team writer before offering destructive cleanup', async () => {
+    const harness = makeHarness([makePane({ teamRunId: 'team-run', worktreePath: '/project/candidate' })]);
+
+    const result = await harness.workflow.close('pane');
+
+    expect(result).toMatchObject({ type: 'error', message: expect.stringContaining('Team Room') });
+    expect(core.closePane).not.toHaveBeenCalled();
+    expect(harness.dependencies.clearDuelMetadata).not.toHaveBeenCalled();
+  });
+
+  it('protects a recorded Team writer whose persisted tag was lost', async () => {
+    const harness = makeHarness();
+    harness.dependencies.isTeamOwnedWriter.mockReturnValue(true);
+
+    const result = await harness.workflow.close('pane');
+
+    expect(result.type).toBe('error');
+    expect(core.closePane).not.toHaveBeenCalled();
   });
 
   it('adds a pane to done only after the terminal merge result succeeds', async () => {

@@ -15,7 +15,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTes
 import { makeTerminalPtyViewSessionName } from '../../src/main/services/terminal-pty-session';
 import { SIDEBAR_PANEL_ID } from '../../src/renderer/components/layout/sidebarLayout';
 import { MIN_FLEET_PANE_WIDTH_PX } from '../../src/renderer/hooks/usePanelLayout';
-import { IPC, IPC_EVENT } from '../../src/shared/ipc-channels';
+import { IPC } from '../../src/shared/ipc-channels';
 import type {
   PaneCreateResponse,
   SessionInfoResult,

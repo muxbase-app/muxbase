@@ -65,6 +65,7 @@ export interface MuxBasePane {
   review?: ReviewMetadata;
   conflictMerge?: ConflictMergeMetadata;
   duel?: DuelMetadata;
+  teamRunId?: string;
   model?: string;
   effort?: string;
 }

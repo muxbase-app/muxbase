@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalSettings } from '../src/renderer/components/settings/TerminalSettings';
 import { useElectronSettingsStore } from '../src/renderer/stores';
@@ -59,7 +59,7 @@ describe('TerminalSettings', () => {
     vi.clearAllMocks();
   });
 
-  it('offers native pty as a live transport option', () => {
+  it('offers native pty as a live transport option', async () => {
     render(<TerminalSettings />);
 
     const transport = screen.getByRole('combobox', { name: 'Live Transport' });
@@ -68,13 +68,13 @@ describe('TerminalSettings', () => {
 
     fireEvent.change(transport, { target: { value: 'pty' } });
 
-    expect(updateElectronSetting).toHaveBeenCalledWith({
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({
       key: 'terminalTransport',
       value: 'pty',
-    });
+    }));
   });
 
-  it('exposes gated terminal protocol controls', () => {
+  it('exposes gated terminal protocol controls', async () => {
     render(<TerminalSettings />);
 
     fireEvent.change(screen.getByRole('combobox', { name: 'OSC 52 Clipboard' }), {
@@ -82,13 +82,13 @@ describe('TerminalSettings', () => {
     });
     fireEvent.click(screen.getByRole('switch', { name: 'OpenCode Mouse Passthrough' }));
 
+    await waitFor(() => expect(updateElectronSetting).toHaveBeenCalledWith({
+      key: 'opencodeMousePassthrough',
+      value: true,
+    }));
     expect(updateElectronSetting).toHaveBeenCalledWith({
       key: 'terminalOsc52Clipboard',
       value: 'allow',
-    });
-    expect(updateElectronSetting).toHaveBeenCalledWith({
-      key: 'opencodeMousePassthrough',
-      value: true,
     });
   });
 });

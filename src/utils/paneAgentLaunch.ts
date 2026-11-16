@@ -11,7 +11,8 @@ import {
   withHiddenAgentTerminalEnvironment,
   withInteractiveShellAfterCommand,
 } from './agentTerminalEnvironment.js';
-import { autoApproveTrustPrompt } from './autoApproveTrustPrompt.js';
+import { autoApproveTrustPrompt, hasAgentStartupPrompt } from './autoApproveTrustPrompt.js';
+import { capturePaneVisible } from './paneCapture.js';
 import { ensureClaudeSessionHookSettings, ensureClaudeSessionShellWrapper } from './claudeSessionRegistry.js';
 import { prepareActivityAdapter, type PreparedActivityAdapter } from './activityAdapters.js';
 import { findPiCommand } from './agentDetection.js';
@@ -168,7 +169,9 @@ async function launchClaude(options: AgentLaunchOptions): Promise<void> {
       const started = await waitForAgentReady(options.tmuxService, options.paneId, 'claude', 15000);
       if (started) {
         await wait(500);
-        await options.tmuxService.sendTmuxKeys(options.paneId, 'Enter');
+        if (!hasAgentStartupPrompt(capturePaneVisible(options.paneId))) {
+          await options.tmuxService.sendTmuxKeys(options.paneId, 'Enter');
+        }
       }
     }
   }

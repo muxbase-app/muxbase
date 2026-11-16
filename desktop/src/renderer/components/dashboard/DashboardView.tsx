@@ -7,6 +7,7 @@ import { useElectronSettingsStore, usePaneStore, useProjectStore, useUiStore } f
 import { useWorktreeOverviewStore } from '../../stores/worktree-overview.store';
 import { ConflictResolutionView } from '../conflict-resolution/ConflictResolutionView';
 import { Spinner } from '../shared/Spinner';
+import { TeamRoomView } from '../team/TeamRoomView';
 import { WorktreeOverviewModal } from '../worktree/WorktreeOverviewModal';
 import { DuelView } from './DuelView';
 import { FocusView } from './FocusView';
@@ -74,6 +75,7 @@ export function DashboardView() {
         {effectiveViewMode === 'fleet' && <PaneTerminalGrid />}
         {effectiveViewMode === 'focus' && <FocusView />}
         {effectiveViewMode === 'duel' && <DuelView />}
+        {effectiveViewMode === 'team' && <TeamRoomView />}
         {effectiveViewMode === 'kanban' && (
           <Suspense fallback={<DashboardLoading label="Loading board" />}>
             <KanbanBoard />

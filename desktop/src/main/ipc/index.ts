@@ -25,6 +25,7 @@ import { registerRecapHandlers } from './recap.handlers.js';
 import { registerRendererLogHandlers } from './renderer-log.handlers.js';
 import { registerSettingsHandlers } from './settings.handlers.js';
 import { registerSystemHandlers } from './system.handlers.js';
+import { registerTeamHandlers } from './team.handlers.js';
 import { registerTerminalHandlers } from './terminal.handlers.js';
 import { registerTopicsHandlers } from './topics.handlers.js';
 import { registerUpdateHandlers } from './update.handlers.js';
@@ -59,6 +60,7 @@ export function registerAllHandlers(
   registerRecapHandlers(bridge);
   registerRendererLogHandlers();
   registerSettingsHandlers(bridge);
+  registerTeamHandlers(bridge);
   registerSystemHandlers(bridge);
   registerTerminalHandlers(bridge);
   registerTopicsHandlers(bridge);

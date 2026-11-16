@@ -9,6 +9,7 @@ import {
   OPEN_PROJECT_ACTION_ID,
   SETTINGS_ACTION_ID,
   SHELL_ACTION_ID,
+  TEAM_ACTION_ID,
   TOPICS_ACTION_ID,
   createSidebarActionContext,
   resolveSidebarActions,
@@ -34,16 +35,20 @@ describe('sidebar actions', () => {
       createShellPane: vi.fn(),
       fileBrowserOpen: false,
       openSettings: vi.fn(),
+      openTeam: vi.fn(),
       openWorkspacePicker: vi.fn(),
       settingsCategory: 'appearance',
       setActiveView: vi.fn(),
+      teamNeedsYou: 0,
       toggleFileBrowser: vi.fn(),
+      viewMode: 'fleet',
     });
 
     const actions = resolveSidebarActions(context);
 
     expect(actions.map((action) => action.id)).toEqual([
       SHELL_ACTION_ID,
+      TEAM_ACTION_ID,
       FILE_BROWSER_ACTION_ID,
       OPEN_PROJECT_ACTION_ID,
       MARKETPLACE_ACTION_ID,
@@ -82,10 +87,13 @@ describe('sidebar actions', () => {
       createShellPane,
       fileBrowserOpen: false,
       openSettings: vi.fn(),
+      openTeam: vi.fn(),
       openWorkspacePicker: vi.fn(),
       settingsCategory: 'appearance',
       setActiveView: vi.fn(),
+      teamNeedsYou: 0,
       toggleFileBrowser: vi.fn(),
+      viewMode: 'fleet',
     });
 
     // Act
@@ -104,10 +112,13 @@ describe('sidebar actions', () => {
       createShellPane: vi.fn(),
       fileBrowserOpen: false,
       openSettings: vi.fn(),
+      openTeam: vi.fn(),
       openWorkspacePicker: vi.fn(),
       settingsCategory: 'appearance',
       setActiveView: vi.fn(),
+      teamNeedsYou: 0,
       toggleFileBrowser: vi.fn(),
+      viewMode: 'fleet',
     });
 
     const actions = resolveSidebarActions(context);
